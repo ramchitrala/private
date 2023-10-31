@@ -11,12 +11,10 @@ import AdminUI.AdminPanel;
 import model.professor.ProfessorAccount;
 import model.course.Courses;
 import Student_UI.Student_UI;
+import java.awt.Component;
 import model.student.Student;
 import model.student.StudentCatalogue;
 import model.student.choosedcoursecatalogue;
-import model.student.studentperformancecatalouge;
-import professor.rating.*;
-
 
 
 /**
@@ -30,18 +28,16 @@ public class mainJframe extends javax.swing.JFrame {
      */
     ProfessorDirectory professordirectory;
     CourseDirectory courseDirectory;
+    Student student;
     StudentCatalogue studentCatalogue;
     choosedcoursecatalogue choosedcoursecatalogue;
-    studentperformancecatalouge performancecatalogue;
-    professorratingCatalogue ratingcatalogue;
     public mainJframe() {
         initComponents();
         professordirectory = new ProfessorDirectory();
         courseDirectory = new CourseDirectory();
+        student = new Student();
         studentCatalogue = new StudentCatalogue();
         choosedcoursecatalogue = new choosedcoursecatalogue();
-        performancecatalogue = new studentperformancecatalouge();
-        ratingcatalogue = new professorratingCatalogue();
         
         ProfessorAccount p1 = this.professordirectory.addProfessorAccount();
         p1.setFirstNamePro("Eric");
@@ -102,7 +98,6 @@ public class mainJframe extends javax.swing.JFrame {
         c1.setTeachingLanguage("English");
         c1.setNumofModules("12");
         c1.setProfessorname("Oprofessor");
-        c1.setStudentsregistered(0);
         
         Courses c2 = courseDirectory.addCourse();
         c2.setCourseTitle("Web design");
@@ -113,7 +108,6 @@ public class mainJframe extends javax.swing.JFrame {
         c2.setTeachingLanguage("English");
         c2.setNumofModules("14");
         c2.setProfessorname("Oprofessor");
-        c2.setStudentsregistered(0);
         
         Courses c3 = courseDirectory.addCourse();
         c3.setCourseTitle("AWS");
@@ -124,7 +118,6 @@ public class mainJframe extends javax.swing.JFrame {
         c3.setTeachingLanguage("English");
         c3.setNumofModules("14");
         c3.setProfessorname("Dprofessor");
-        c3.setStudentsregistered(0);
         
         Courses c4 = courseDirectory.addCourse();
         c4.setCourseTitle("Cloud Computing");
@@ -135,7 +128,6 @@ public class mainJframe extends javax.swing.JFrame {
         c4.setTeachingLanguage("English");
         c4.setNumofModules("14");
         c4.setProfessorname("Dprofessor");
-        c4.setStudentsregistered(0);
         
         Courses c5 = courseDirectory.addCourse();
         c5.setCourseTitle("Deveops");
@@ -146,7 +138,6 @@ public class mainJframe extends javax.swing.JFrame {
         c5.setTeachingLanguage("Spanish");
         c5.setNumofModules("14");
         c5.setProfessorname("Eprofessor");
-        c5.setStudentsregistered(0);
         
         Courses c6 = courseDirectory.addCourse();
         c6.setCourseTitle("ENCP");
@@ -157,7 +148,6 @@ public class mainJframe extends javax.swing.JFrame {
         c6.setTeachingLanguage("Spanish");
         c6.setNumofModules("14");
         c6.setProfessorname("Eprofessor");
-        c6.setStudentsregistered(0);
         
         Courses c7 = courseDirectory.addCourse();
         c7.setCourseTitle("Data Structures");
@@ -168,7 +158,6 @@ public class mainJframe extends javax.swing.JFrame {
         c7.setTeachingLanguage("English, Spanish");
         c7.setNumofModules("14");
         c7.setProfessorname("Jprofessor");
-        c7.setStudentsregistered(0);
         
         Courses c8 = courseDirectory.addCourse();
         c8.setCourseTitle("Data Science Engineering Methods and Tools");
@@ -179,7 +168,6 @@ public class mainJframe extends javax.swing.JFrame {
         c8.setTeachingLanguage("English, Spanish");
         c8.setNumofModules("14");
         c8.setProfessorname("Jprofessor");
-        c8.setStudentsregistered(0);
         
         Courses c9 = courseDirectory.addCourse();
         c9.setCourseTitle("Engineering of Big-Data Systems");
@@ -190,7 +178,6 @@ public class mainJframe extends javax.swing.JFrame {
         c9.setTeachingLanguage("English");
         c9.setNumofModules("14");
         c9.setProfessorname("Aprofessor");
-        c9.setStudentsregistered(0);
         
         Courses c10 = courseDirectory.addCourse();
         c10.setCourseTitle("Neural Modeling Methods and Tools");
@@ -201,48 +188,7 @@ public class mainJframe extends javax.swing.JFrame {
         c10.setTeachingLanguage("English");
         c10.setNumofModules("14");
         c10.setProfessorname("Aprofessor");
-        c10.setStudentsregistered(0);
-        
-            Student s1 = studentCatalogue.addnewStudent();
-            s1.setFname("Donald");
-            s1.setLname("Mucharla");
-            s1.setMailid("mucharla.d@northeastern.edu");
-            s1.setNuid("131281");
-            s1.setTerm("Fall 2023");
-            s1.setPhone("1111111");
-            s1.setAddress("India");
-            s1.setUsername("donald");
-            s1.setPassword("donald");
-            s1.setDOB("05-04-1997");
-            
-            Student s2 = studentCatalogue.addnewStudent();
-            s2.setFname("Vignesh");
-            s2.setLname("Vignesh");
-            s2.setMailid("vignesh.s@northeastern.edu");
-            s2.setNuid("131282");
-            s2.setTerm("Fall 2023");
-            s2.setPhone("222222222");
-            s2.setAddress("India");
-            s2.setUsername("vignesh");
-            s2.setPassword("vignesh");
-            s1.setDOB("31-12-2000");
-            
-            Student s3 = studentCatalogue.addnewStudent();
-            s3.setFname("Ram");
-            s3.setLname("Ram");
-            s3.setMailid("ram@northeastern.edu");
-            s3.setNuid("131283");
-            s3.setTerm("Fall 2023");
-            s3.setPhone("333333333");
-            s3.setAddress("India");
-            s3.setUsername("ram");
-            s3.setPassword("ram");
-            s1.setDOB("27-02-1999");
-            
-            
     }
-    
-
     
  
     
@@ -261,9 +207,15 @@ public class mainJframe extends javax.swing.JFrame {
         jButton1 = new javax.swing.JButton();
         jButton2 = new javax.swing.JButton();
         jButton3 = new javax.swing.JButton();
+        jLabel5 = new javax.swing.JLabel();
+        jLabel6 = new javax.swing.JLabel();
+        jLabel7 = new javax.swing.JLabel();
         jPanel4 = new javax.swing.JPanel();
+        jLabel3 = new javax.swing.JLabel();
         jLabel1 = new javax.swing.JLabel();
         jLabel2 = new javax.swing.JLabel();
+        jLabel4 = new javax.swing.JLabel();
+        husky = new javax.swing.JLabel();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
 
@@ -271,26 +223,44 @@ public class mainJframe extends javax.swing.JFrame {
 
         jPanel3.setBackground(new java.awt.Color(255, 255, 255));
 
-        jButton1.setText("Professor");
+        jButton1.setIcon(new javax.swing.ImageIcon(getClass().getResource("/img/professor.png"))); // NOI18N
+        jButton1.setCursor(new java.awt.Cursor(java.awt.Cursor.HAND_CURSOR));
+        jButton1.setPressedIcon(new javax.swing.ImageIcon(getClass().getResource("/img/pressed_prof.png"))); // NOI18N
+        jButton1.setRolloverIcon(new javax.swing.ImageIcon(getClass().getResource("/img/pressed_prof.png"))); // NOI18N
+        jButton1.setRolloverSelectedIcon(new javax.swing.ImageIcon(getClass().getResource("/img/pressed_prof.png"))); // NOI18N
+        jButton1.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mousePressed(java.awt.event.MouseEvent evt) {
+                jButton1MousePressed(evt);
+            }
+        });
         jButton1.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButton1ActionPerformed(evt);
             }
         });
 
-        jButton2.setText("Student");
+        jButton2.setIcon(new javax.swing.ImageIcon(getClass().getResource("/img/student.png"))); // NOI18N
+        jButton2.setCursor(new java.awt.Cursor(java.awt.Cursor.HAND_CURSOR));
+        jButton2.setRolloverIcon(new javax.swing.ImageIcon(getClass().getResource("/img/pressed_student.png"))); // NOI18N
+        jButton2.setRolloverSelectedIcon(new javax.swing.ImageIcon(getClass().getResource("/img/pressed_student.png"))); // NOI18N
         jButton2.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButton2ActionPerformed(evt);
             }
         });
 
-        jButton3.setText("Admin");
+        jButton3.setIcon(new javax.swing.ImageIcon(getClass().getResource("/img/admin.png"))); // NOI18N
         jButton3.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButton3ActionPerformed(evt);
             }
         });
+
+        jLabel5.setText("Professor");
+
+        jLabel6.setText("Student");
+
+        jLabel7.setText("Admin");
 
         javax.swing.GroupLayout jPanel3Layout = new javax.swing.GroupLayout(jPanel3);
         jPanel3.setLayout(jPanel3Layout);
@@ -299,55 +269,89 @@ public class mainJframe extends javax.swing.JFrame {
             .addGroup(jPanel3Layout.createSequentialGroup()
                 .addGap(31, 31, 31)
                 .addGroup(jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addComponent(jButton3)
-                    .addComponent(jButton2)
-                    .addComponent(jButton1))
-                .addGap(39, 39, 39))
+                    .addComponent(jLabel7)
+                    .addComponent(jButton3, javax.swing.GroupLayout.PREFERRED_SIZE, 50, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addGroup(jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING, false)
+                        .addComponent(jButton1, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE)
+                        .addComponent(jLabel5, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                        .addComponent(jLabel6, javax.swing.GroupLayout.Alignment.LEADING)
+                        .addComponent(jButton2, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE)))
+                .addGap(68, 68, 68))
         );
-
-        jPanel3Layout.linkSize(javax.swing.SwingConstants.HORIZONTAL, new java.awt.Component[] {jButton1, jButton2, jButton3});
-
         jPanel3Layout.setVerticalGroup(
             jPanel3Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jPanel3Layout.createSequentialGroup()
-                .addGap(94, 94, 94)
-                .addComponent(jButton1)
+                .addGap(75, 75, 75)
+                .addComponent(jButton1, javax.swing.GroupLayout.PREFERRED_SIZE, 50, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel5)
                 .addGap(18, 18, 18)
-                .addComponent(jButton2)
+                .addComponent(jButton2, javax.swing.GroupLayout.PREFERRED_SIZE, 50, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel6)
                 .addGap(18, 18, 18)
-                .addComponent(jButton3)
-                .addGap(301, 301, 301))
+                .addComponent(jButton3, javax.swing.GroupLayout.PREFERRED_SIZE, 50, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel7)
+                .addContainerGap())
         );
 
         jSplitPane2.setLeftComponent(jPanel3);
 
-        jPanel4.setBackground(new java.awt.Color(255, 255, 255));
+        jPanel4.setBackground(new java.awt.Color(224, 25, 44));
 
-        jLabel1.setFont(new java.awt.Font("Tw Cen MT Condensed", 1, 48)); // NOI18N
-        jLabel1.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
-        jLabel1.setText("Welcom ");
+        jLabel3.setFont(new java.awt.Font("Segoe UI", 1, 36)); // NOI18N
+        jLabel3.setForeground(new java.awt.Color(255, 255, 255));
+        jLabel3.setText("WELCOME");
 
-        jLabel2.setFont(new java.awt.Font("Segoe UI", 1, 24)); // NOI18N
-        jLabel2.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
-        jLabel2.setText("to E-learning Platform");
+        jLabel1.setFont(new java.awt.Font("Segoe UI Black", 0, 18)); // NOI18N
+        jLabel1.setForeground(new java.awt.Color(255, 255, 255));
+        jLabel1.setText("e-Learning User Management Portal");
+
+        jLabel2.setFont(new java.awt.Font("Candara Light", 0, 96)); // NOI18N
+        jLabel2.setForeground(new java.awt.Color(255, 255, 255));
+        jLabel2.setText("I");
+
+        jLabel4.setIcon(new javax.swing.ImageIcon(getClass().getResource("/img/nulogo.png"))); // NOI18N
+
+        husky.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
+        husky.setIcon(new javax.swing.ImageIcon(getClass().getResource("/img/huskytransparent.png"))); // NOI18N
+        husky.setCursor(new java.awt.Cursor(java.awt.Cursor.WAIT_CURSOR));
+
+        husky.setAlignmentX(Component.RIGHT_ALIGNMENT);
 
         javax.swing.GroupLayout jPanel4Layout = new javax.swing.GroupLayout(jPanel4);
         jPanel4.setLayout(jPanel4Layout);
         jPanel4Layout.setHorizontalGroup(
             jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jPanel4Layout.createSequentialGroup()
-                .addGap(60, 60, 60)
-                .addComponent(jLabel2, javax.swing.GroupLayout.PREFERRED_SIZE, 320, javax.swing.GroupLayout.PREFERRED_SIZE))
-            .addGroup(jPanel4Layout.createSequentialGroup()
-                .addGap(110, 110, 110)
-                .addComponent(jLabel1, javax.swing.GroupLayout.PREFERRED_SIZE, 240, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addContainerGap(81, Short.MAX_VALUE)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
+                    .addComponent(jLabel1)
+                    .addComponent(jLabel3))
+                .addGap(0, 0, 0)
+                .addComponent(jLabel2, javax.swing.GroupLayout.PREFERRED_SIZE, 26, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel4, javax.swing.GroupLayout.PREFERRED_SIZE, 220, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 36, Short.MAX_VALUE)
+                .addComponent(husky, javax.swing.GroupLayout.PREFERRED_SIZE, 282, javax.swing.GroupLayout.PREFERRED_SIZE))
         );
         jPanel4Layout.setVerticalGroup(
             jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(jPanel4Layout.createSequentialGroup()
-                .addGap(150, 150, 150)
-                .addComponent(jLabel2))
-            .addComponent(jLabel1, javax.swing.GroupLayout.PREFERRED_SIZE, 220, javax.swing.GroupLayout.PREFERRED_SIZE)
+            .addComponent(husky, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel4Layout.createSequentialGroup()
+                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addGroup(jPanel4Layout.createSequentialGroup()
+                        .addGap(10, 10, 10)
+                        .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addComponent(jLabel2)
+                            .addGroup(jPanel4Layout.createSequentialGroup()
+                                .addComponent(jLabel3, javax.swing.GroupLayout.PREFERRED_SIZE, 35, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                                .addComponent(jLabel1))))
+                    .addComponent(jLabel4, javax.swing.GroupLayout.PREFERRED_SIZE, 100, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addGap(307, 307, 307))
         );
 
         jSplitPane2.setRightComponent(jPanel4);
@@ -356,7 +360,7 @@ public class mainJframe extends javax.swing.JFrame {
         getContentPane().setLayout(layout);
         layout.setHorizontalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addComponent(jSplitPane2, javax.swing.GroupLayout.DEFAULT_SIZE, 600, Short.MAX_VALUE)
+            .addComponent(jSplitPane2)
         );
         layout.setVerticalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
@@ -367,7 +371,7 @@ public class mainJframe extends javax.swing.JFrame {
     }// </editor-fold>//GEN-END:initComponents
 
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
-        ProfessorFirst professor = new ProfessorFirst(professordirectory, courseDirectory, performancecatalogue, choosedcoursecatalogue, studentCatalogue, performancecatalogue );
+        ProfessorFirst professor = new ProfessorFirst(professordirectory, courseDirectory );
         jSplitPane2.setRightComponent(professor);
     }//GEN-LAST:event_jButton1ActionPerformed
 
@@ -377,9 +381,13 @@ public class mainJframe extends javax.swing.JFrame {
     }//GEN-LAST:event_jButton3ActionPerformed
 
     private void jButton2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton2ActionPerformed
-        Student_UI studentpanel = new Student_UI(studentCatalogue, courseDirectory, professordirectory, choosedcoursecatalogue, performancecatalogue, ratingcatalogue);
+        Student_UI studentpanel = new Student_UI(studentCatalogue, courseDirectory, professordirectory, choosedcoursecatalogue);
         jSplitPane2.setRightComponent(studentpanel);
     }//GEN-LAST:event_jButton2ActionPerformed
+
+    private void jButton1MousePressed(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jButton1MousePressed
+        // TODO add your handling code here:
+    }//GEN-LAST:event_jButton1MousePressed
 
     /**
      * @param args the command line arguments
@@ -417,11 +425,17 @@ public class mainJframe extends javax.swing.JFrame {
     }
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
+    private javax.swing.JLabel husky;
     private javax.swing.JButton jButton1;
     private javax.swing.JButton jButton2;
     private javax.swing.JButton jButton3;
     private javax.swing.JLabel jLabel1;
     private javax.swing.JLabel jLabel2;
+    private javax.swing.JLabel jLabel3;
+    private javax.swing.JLabel jLabel4;
+    private javax.swing.JLabel jLabel5;
+    private javax.swing.JLabel jLabel6;
+    private javax.swing.JLabel jLabel7;
     private javax.swing.JPanel jPanel3;
     private javax.swing.JPanel jPanel4;
     private javax.swing.JSplitPane jSplitPane2;

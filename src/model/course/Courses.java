@@ -17,17 +17,6 @@ public class Courses {
     private String numofModules;
     private String teachingLanguage;
     private String professorname;
-    private int studentsregistered;
-
-    public int getStudentsregistered() {
-        return studentsregistered;
-    }
-
-    public void setStudentsregistered(int studentsregistered) {
-        this.studentsregistered = studentsregistered;
-    }
-
-   
 
     public String getProfessorname() {
         return professorname;

@@ -118,12 +118,7 @@ public class Student {
         this.password = password;
     }
     
-    @Override
-    public String toString(){
-        
-        return fname+" "+lname;
-        
-    }        
+            
     
     
 }
