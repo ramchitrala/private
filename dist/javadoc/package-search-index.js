@@ -1,0 +1,1 @@
+packageSearchIndex = [{"l":"AdminUI"},{"l":"All Packages","u":"allpackages-index.html"},{"l":"model.course"},{"l":"model.professor"},{"l":"model.student"},{"l":"Professor_UI"},{"l":"Student_UI"}];updateSearchResults();
