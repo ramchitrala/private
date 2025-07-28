@@ -1,0 +1,4 @@
+__pycache__/
+clock_app/instance/
+*.pyc
+*.db
