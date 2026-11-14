@@ -225,7 +225,7 @@ describe("end-to-end run in mock mode", () => {
     expect(bodyToText(p.doc!)).toContain("I also received the Regional Data Prize in 2024.");
     expect(p.facts!.items.filter((f) => f.source === "user").map((f) => f.text)).toContain("Received the Regional Data Prize in 2024");
     expect(p.passed).toBe(true);
-    expect(p.versions.map((v) => v.label)).toEqual(["Draft 1", "Edit 1"]);
+    expect(p.versions.map((v) => v.label)).toEqual(["Draft 1", "Edit 1: I also won the Regional Data Prize in 2024."]);
     const last = p.chat[p.chat.length - 1];
     expect(last.before).toBe(before);
     expect(last.after).toBe(bodyToText(p.doc!));

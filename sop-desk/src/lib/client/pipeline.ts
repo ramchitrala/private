@@ -154,7 +154,8 @@ function foldAnswers(p: Project): void {
 
 /* ------------------------------------------------------- draft and review */
 
-export async function runDraft(rt: Runtime, retryNote = ""): Promise<void> {
+/** Write a fresh first draft only (no humanize or review). Clears the previous run's draft state. */
+export async function writeDraft(rt: Runtime, retryNote = ""): Promise<void> {
   // No draft without research: the default structure is used only after the search really ran.
   if (!rt.get().research) throw new StageFailure("draft", "no_research", "Find the requirements first. Nothing is written before the official site has been searched.");
   rt.set(foldAnswers);
@@ -170,6 +171,10 @@ export async function runDraft(rt: Runtime, retryNote = ""): Promise<void> {
     x.reviewer = null;
     x.pending = null;
   });
+}
+
+export async function runDraft(rt: Runtime, retryNote = ""): Promise<void> {
+  await writeDraft(rt, retryNote);
   await continueRun(rt, retryNote ? "Retry" : "Draft");
 }
 
@@ -187,6 +192,7 @@ export async function continueRun(rt: Runtime, label = "Draft", maxRounds = rt.i
   }
   await reviewLoop(rt, maxRounds);
   p = rt.get();
+  rt.status("Preparing your files");
   await saveVersion(rt, `${label} ${p.versions.filter((v) => v.label.startsWith(label)).length + 1}`);
 }
 
@@ -213,7 +219,7 @@ async function ensureFits(rt: Runtime): Promise<number> {
     const built = await measurePdf(p.doc!, format);
     const problem = official ? overLimits(p.doc!, format, sectionLimits(p.research, format), built.pageCount) : "";
     if (!problem || attempt >= 3) return built.pageCount;
-    rt.status(`Over the limit (${built.pageCount} page${built.pageCount > 1 ? "s" : ""}, ${bodyWords(p.doc!)} words): trimming`);
+    rt.status(`Over the limit (${built.pageCount} page${built.pageCount > 1 ? "s" : ""}, ${bodyWords(p.doc!)} words): trimming to ${format.pageMax && built.pageCount > format.pageMax ? `${format.pageMax} page${format.pageMax > 1 ? "s" : ""}` : `${format.wordMax} words`}`);
     const res = await rt.call<EditOutput>("/api/edit", { ctx: writingContext(p), sections: p.doc!.sections, task: { mode: "trim", problem } satisfies EditTask }, "Trim to fit");
     if (JSON.stringify(res.sections) === JSON.stringify(p.doc!.sections)) return built.pageCount;
     rt.set((x) => (x.doc = assemble(x, res.sections)));
@@ -406,7 +412,8 @@ export async function runChatEdit(rt: Runtime, request: string): Promise<void> {
   await reviewLoop(rt, rt.info.maxEditReviewRounds, { request, newFacts });
 
   // 5. Files are rebuilt from the new version.
-  await saveVersion(rt, `Edit ${rt.get().versions.filter((v) => v.label.startsWith("Edit")).length + 1}`);
+  rt.status("Preparing your files");
+  await saveVersion(rt, `Edit ${rt.get().versions.filter((v) => v.label.startsWith("Edit")).length + 1}: ${request.slice(0, 80)}`);
   const end = rt.get();
   say({
     role: "app",

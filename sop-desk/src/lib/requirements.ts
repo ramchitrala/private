@@ -381,8 +381,9 @@ export function checklist(research: Research | null, doc: DocModel | null, forma
   if (!research) return [];
   const prompts = research.items.filter((i) => i.kind === "prompt" && i.verified);
   const words = doc ? bodyWords(doc) : 0;
+  // A rule about AI use or authorship is never "met" by the text: it is shown to the applicant as a caveat instead.
   return research.items
-    .filter((i) => i.verified)
+    .filter((i) => i.verified && i.kind !== "aiPolicy")
     .map((item): ChecklistRow => {
       if (!doc) return { item, met: null, note: "No draft yet" };
       switch (item.kind) {

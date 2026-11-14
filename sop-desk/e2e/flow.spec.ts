@@ -1,10 +1,78 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 
 const RESUME = readFileSync(path.join(__dirname, "..", "fixtures", "resume.txt"), "utf8"); // made-up applicant
 const SHOTS = path.join(__dirname, "screenshots");
+rmSync(SHOTS, { recursive: true, force: true });
 mkdirSync(SHOTS, { recursive: true });
+
+const SCU = "https://www.scu.edu/business/ms/ms-information-systems/";
+const NEW_HAVEN = "https://www.newhaven.edu/engineering/graduate-programs/cybersecurity/";
+
+/** Words that must not appear in the main path, outside "Show details" and the statement itself. */
+const JARGON = /\b(requirements?|humanizer|verdict|reviewer|lint|style flags|tokens?|fixtures|registrable|domain|Passed review|Not passed|Not met|Must fix|review round)\b/i;
+
+async function noHorizontalScroll(page: Page) {
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow, "page must not scroll horizontally").toBeLessThanOrEqual(0);
+}
+
+async function plainWords(page: Page) {
+  const text = await page.evaluate(() => {
+    const main = document.querySelector("main")!.cloneNode(true) as HTMLElement;
+    main.querySelectorAll(".sheet, details:not([open]) > :not(summary)").forEach((el) => el.remove());
+    return main.innerText;
+  });
+  const hit = text.match(JARGON);
+  expect(hit?.[0] ?? "", `jargon on screen: "${hit?.[0]}"`).toBe("");
+}
+
+async function shot(page: Page, name: string, opts: { jargon?: boolean } = {}) {
+  await noHorizontalScroll(page);
+  if (opts.jargon !== false) await plainWords(page);
+  await page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: true });
+}
+
+/** Open or close a disclosure by its exact summary text. */
+async function toggle(page: Page, name: string) {
+  await page.locator("summary").filter({ hasText: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) }).first().click();
+}
+
+async function focusedIsH1(page: Page, name: string | RegExp) {
+  const h1 = page.getByRole("heading", { level: 1, name });
+  await expect(h1).toBeVisible();
+  await expect(h1).toBeFocused();
+}
+
+async function unlock(page: Page) {
+  await page.goto("/");
+  await page.getByLabel("Passcode").fill("test-passcode");
+  await page.getByRole("button", { name: "Continue" }).click();
+}
+
+/** First visit: resume, details, then the program screen of the first statement. */
+async function onboard(page: Page, tag = "") {
+  await focusedIsH1(page, "Start with your resume");
+  await expect(page.getByText("Step 1 of 6")).toBeVisible();
+  if (tag) await shot(page, `${tag}-01-resume`);
+
+  // Pressing Continue with nothing gives a clear message, not a disabled button.
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Upload your resume or paste its text first." })).toBeVisible();
+
+  await toggle(page, "Paste the text instead");
+  await page.getByLabel("Your resume text").fill(RESUME);
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  await focusedIsH1(page, "Check your details");
+  await expect(page.getByText("Step 2 of 6")).toBeVisible();
+  await expect(page.getByLabel("Your name")).toHaveValue("Maya Okafor");
+  if (tag) await shot(page, `${tag}-02-details`);
+  await page.getByRole("button", { name: "Looks right" }).click();
+  await focusedIsH1(page, "Which program is this statement for?");
+  await expect(page.getByText("Step 3 of 6")).toBeVisible();
+}
 
 const VIEWPORTS = [
   { name: "1440", width: 1440, height: 900 },
@@ -12,200 +80,309 @@ const VIEWPORTS = [
 ];
 const THEMES = ["light", "dark"] as const;
 
-async function noHorizontalScroll(page: Page) {
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow, "page must not scroll horizontally").toBeLessThanOrEqual(0);
-}
-
-async function shot(page: Page, name: string) {
-  await noHorizontalScroll(page);
-  await page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: true });
-}
-
-async function openApp(page: Page, theme: string) {
-  await page.addInitScript((t) => {
-    if (!localStorage.getItem("sopdesk.theme")) localStorage.setItem("sopdesk.theme", t);
-  }, theme);
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: "SOP Desk" })).toBeVisible();
-}
-
-async function unlock(page: Page) {
-  await page.getByLabel("Passcode").fill("test-passcode");
-  await page.getByRole("button", { name: "Open" }).click();
-  await expect(page.getByRole("button", { name: "New project" })).toBeVisible();
-}
-
-async function intake(page: Page, link: string) {
-  await page.getByLabel("Or paste the resume text").fill(RESUME);
-  await page.getByLabel("Program link").fill(link);
-}
-
 for (const vp of VIEWPORTS) {
   for (const theme of THEMES) {
-    test(`full run, ${vp.name}px, ${theme} theme`, async ({ page }) => {
+    test(`first visit to download, then a second statement, ${vp.name}px, ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       const tag = `${vp.name}-${theme}`;
-      const mobile = vp.width < 820;
-      const tab = async (name: string) => {
-        if (mobile) await page.getByRole("tab", { name }).click();
-      };
 
-      await openApp(page, theme);
-      await shot(page, `${tag}-0-passcode`);
-      await unlock(page);
-      expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe(theme);
+      await page.goto("/");
+      await expect(page.getByRole("heading", { name: "SOP Desk" })).toBeVisible();
+      await shot(page, `${tag}-00-passcode`);
+      await page.getByLabel("Passcode").fill("test-passcode");
+      await page.getByRole("button", { name: "Continue" }).click();
 
-      // 1. Resume and program
-      await intake(page, "https://www.scu.edu/business/ms/ms-information-systems/");
-      await shot(page, `${tag}-1-resume-and-program`);
-      await page.getByRole("button", { name: "Read resume", exact: true }).click();
+      await onboard(page, tag);
 
-      // 2. Facts
-      await expect(page.getByLabel("Your name")).toHaveValue("Maya Okafor");
-      await shot(page, `${tag}-2-facts`);
-      await page.getByRole("button", { name: "Find requirements" }).click();
+      // Program: the only thing a statement asks for is the link.
+      await expect(page.getByText(/Using your resume: Pasted resume text/)).toBeVisible();
+      await page.getByLabel("Link to the program's page").fill(SCU);
+      await shot(page, `${tag}-03-program`);
+      await page.getByRole("button", { name: "Find the instructions" }).click();
 
-      // 3. Requirements
-      await expect(page.getByText("Following the official instructions on scu.edu.").first()).toBeVisible();
-      await expect(page.getByText("What excites you about information systems?").first()).toBeVisible();
-      // The invented course with an unverifiable quote was dropped, and the UI says so.
-      await expect(page.getByText(/item(s)? dropped/)).toBeVisible();
-      await shot(page, `${tag}-3-requirements`);
-      await page.getByRole("button", { name: "Continue to draft" }).click();
+      // Instructions: a plain summary, evidence one tap away.
+      await focusedIsH1(page, "What Fixture University asks for");
+      await expect(page.getByText("Step 4 of 6")).toBeVisible();
+      await expect(page.getByText("What excites you about information systems?", { exact: true })).toBeVisible();
+      await expect(page.getByText("400 to 500 words in total", { exact: true })).toBeVisible();
+      await toggle(page, "Where this came from");
+      await expect(page.getByText("Statement of Purpose: answer each of the following questions.", { exact: false })).toBeVisible();
+      await toggle(page, "Instructions we couldn't confirm (1)");
+      await expect(page.getByText("Quantum Ledger Design")).toBeVisible();
+      await shot(page, `${tag}-04-instructions`);
+      await page.getByRole("button", { name: "Looks right, continue" }).click();
 
-      // 4. Draft and review
-      await page.getByRole("button", { name: "Check for missing details" }).click();
-      await expect(page.getByText("A few optional questions")).toBeVisible();
-      await page.getByRole("checkbox", { name: "Skip" }).first().check();
-      await shot(page, `${tag}-4-draft-questions`);
-      await page.getByRole("button", { name: "Write draft" }).click();
+      // Questions: optional, no Skip boxes.
+      await focusedIsH1(page, "A few optional questions");
+      await expect(page.getByText("Step 5 of 6")).toBeVisible();
+      await page.getByRole("textbox", { name: "Have you received any scholarships or fellowships?" }).fill("Regional Fellowship, 2024");
+      await shot(page, `${tag}-05-questions`);
+      await page.getByRole("button", { name: "Write my statement" }).click();
 
-      // 5. Download (the run moves here when it finishes)
-      await expect(page.getByRole("button", { name: "Download .pdf" })).toBeEnabled({ timeout: 60_000 });
-      await expect(page.getByText("Passed review").first()).toBeVisible();
-      await expect(page.locator('[data-testid="pages"] canvas').first()).toBeVisible();
-      await shot(page, `${tag}-5-download-page-view`);
+      // Writing: four plain stages.
+      await expect(page.getByRole("heading", { level: 1, name: "Writing your statement" })).toBeVisible();
+      await expect(page.getByText("1. Writing your first draft")).toBeVisible();
+      await shot(page, `${tag}-06-writing`);
 
-      const [pdf] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download .pdf" }).click()]);
+      // Result.
+      await focusedIsH1(page, "Your statement is ready");
+      await expect(page.getByText("Step 6 of 6")).toBeVisible();
+      await expect(page.getByText(/Follows all 7 instructions we found · \d+ words \(limit 400 to 500\) · 1 page/)).toBeVisible();
+      await expect(page.getByText("Fixture University asks for a PDF.", { exact: false })).toBeVisible();
+      await expect(page.getByTestId("textview")).toBeVisible();
+      await expect(page.getByTestId("textview")).toContainText("Maya Okafor");
+      await shot(page, `${tag}-07-result`);
+
+      const [pdf] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download PDF" }).click()]);
       expect(pdf.suggestedFilename()).toBe("Statement of Purpose - Fixture University.pdf");
-      const [docx] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download .docx" }).click()]);
+      await expect(page.getByText("Downloaded. Applying somewhere else?")).toBeVisible();
+      const [docx] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download Word file (.docx)" }).click()]);
       expect(docx.suggestedFilename()).toBe("Statement of Purpose - Fixture University.docx");
 
-      // Review log: round 1 corrections, round 2 clean pass.
-      await tab("Review");
-      await expect(page.getByText("Round 1", { exact: true })).toBeVisible();
-      await expect(page.getByText("Applied word for word").first()).toBeVisible();
-      await expect(page.getByText("Applied by the writer").first()).toBeVisible();
-      await expect(page.getByText("Round 2", { exact: true })).toBeVisible();
-      await shot(page, `${tag}-6-review-log`);
+      // As printed: the real PDF pages, with a text summary.
+      await page.getByRole("button", { name: "As printed" }).click();
+      await expect(page.locator('[data-testid="pages"] canvas').first()).toBeVisible();
+      await expect(page.getByText(/1 page, US Letter, 11 pt, single spaced/)).toBeVisible();
+      await page.getByRole("button", { name: "Easy to read" }).click();
 
-      // Checklist
-      await tab("Checklist");
-      await expect(page.getByText("Met").first()).toBeVisible();
-      if (mobile) await shot(page, `${tag}-7-checklist`);
+      // Details are one tap away, in plain words.
+      await toggle(page, "How SOP Desk checked it");
+      await expect(page.getByText("Check 1: 2 changes suggested")).toBeVisible();
+      await expect(page.getByText("Check 2: nothing to change")).toBeVisible();
+      await toggle(page, "What the program asks for, and where it says so");
+      await expect(page.getByText("Follows").first()).toBeVisible();
+      await shot(page, `${tag}-08-result-details`, { jargon: false });
+      await toggle(page, "How SOP Desk checked it");
+      await toggle(page, "What the program asks for, and where it says so");
 
-      // Edit chat: a stated fact becomes a user fact and the change is reviewed again.
-      await tab("Changes");
-      await page.getByLabel("Ask for a change").fill("I also won the Regional Data Prize in 2024.");
-      await page.getByRole("button", { name: "Make change" }).click();
-      await expect(page.getByText("Added the new fact to the closing paragraph.", { exact: false })).toBeVisible({ timeout: 60_000 });
-      await page.getByText("Show what changed").click();
-      await expect(page.locator(".chatlog ins.add").first()).toContainText("Regional Data Prize");
-      await shot(page, `${tag}-8-change-request`);
-
-      // Text view marks the words the last edit changed.
-      await page.getByRole("button", { name: "Text view" }).click();
+      // A change: a stated award is saved for later statements, with Undo.
+      await page.getByRole("button", { name: "Make it shorter" }).click();
+      await expect(page.getByLabel("Describe it in your own words")).toHaveValue("Make it shorter");
+      await page.getByLabel("Describe it in your own words").fill("I also won the Regional Data Prize in 2024.");
+      await page.getByRole("button", { name: "Make this change" }).click();
+      await expect(page.getByText("Changed: Added the new fact to the closing paragraph.")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByText(/Saved to your details for future statements: “Received the Regional Data Prize in 2024”/)).toBeVisible();
+      await expect(page.getByText("Underlined words changed with your last request.")).toBeVisible();
       await expect(page.locator('[data-testid="textview"] mark').first()).toBeVisible();
-      await shot(page, `${tag}-9-text-view`);
+      await toggle(page, "Show what changed");
+      await expect(page.locator(".diffbox ins.add").first()).toContainText("Regional Data Prize");
+      await shot(page, `${tag}-09-change`);
 
-      // Versions are kept, and the state survives a reload (IndexedDB).
+      // Earlier versions.
+      await toggle(page, "Earlier versions");
+      await expect(page.getByText(/Version 2 · after your change "I also won the Regional Data Prize in 2024\."/)).toBeVisible();
+      await expect(page.getByText(/Version 1 · first draft/)).toBeVisible();
+      await toggle(page, "Earlier versions");
+
+      // Menu, then home.
+      await page.getByRole("button", { name: "Menu" }).click();
+      await expect(page.getByRole("button", { name: "Download a backup" })).toBeVisible();
+      await shot(page, `${tag}-10-menu`);
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("button", { name: "Menu" })).toBeFocused();
+      await page.getByRole("button", { name: /SOP Desk/ }).click();
+      await focusedIsH1(page, "My statements");
+      await expect(page.getByText(/Your resume: Pasted resume text · saved .* · 13 details/)).toBeVisible();
+      await expect(page.getByText(/Fixture University · Ready to download/)).toBeVisible();
+      await shot(page, `${tag}-11-home`);
+
+      // State survives a reload.
       await page.reload();
-      await expect(page.getByRole("button", { name: "New project" })).toBeVisible();
-      await tab("Steps");
-      await expect(page.getByText("Edit 1")).toBeVisible();
-      await expect(page.getByText("Draft 1")).toBeVisible();
-      await noHorizontalScroll(page);
+      await focusedIsH1(page, "My statements");
+
+      // A second statement: no resume step, only the link.
+      await page.getByRole("button", { name: "Start a new statement" }).click();
+      await focusedIsH1(page, "Which program is this statement for?");
+      await expect(page.getByText("Step 1 of 4")).toBeVisible();
+      await expect(page.getByText(/Using your resume: Pasted resume text/)).toBeVisible();
+      await page.getByLabel("Link to the program's page").fill(NEW_HAVEN);
+      await shot(page, `${tag}-12-second-program`);
+      await page.getByRole("button", { name: "Find the instructions" }).click();
+      await focusedIsH1(page, "What Fixture University asks for");
+      await expect(page.getByText("Step 2 of 4")).toBeVisible();
+      await expect(page.getByText("This program has a rule about writing help")).toBeVisible();
+      await page.getByRole("button", { name: "Looks right, continue" }).click();
+      // Test mode always asks the same two questions; the real question step skips anything the details answer.
+      await focusedIsH1(page, "A few optional questions");
+      await page.getByRole("button", { name: "Write my statement" }).click();
+      await focusedIsH1(page, "Your statement is ready");
+
+      // The rule about writing help must be acknowledged before downloading.
+      await page.getByRole("button", { name: "Download PDF" }).click();
+      await expect(page.getByText("Tick the box above first.")).toBeVisible();
+      await expect(page.getByRole("checkbox", { name: "I've read this program's rule about writing help." })).toBeFocused();
+      await page.getByRole("checkbox", { name: "I've read this program's rule about writing help." }).check();
+      const [pdf2] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download PDF" }).click()]);
+      expect(pdf2.suggestedFilename()).toBe("Personal Statement - Fixture University.pdf");
+      await shot(page, `${tag}-13-second-result`);
+
+      // Your resume and details.
+      await page.getByRole("button", { name: "Menu" }).click();
+      await page.getByRole("button", { name: "Your resume and details" }).click();
+      await focusedIsH1(page, "Your resume and details");
+      await expect(page.getByText("Received the Regional Data Prize in 2024")).toBeVisible();
+      await expect(page.getByText("(from a change you asked for)")).toBeVisible();
+      await expect(page.getByText("(from your answer)")).toBeVisible();
+      await shot(page, `${tag}-14-profile`);
     });
   }
 }
 
-test("default structure when the site has no statement instructions", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await openApp(page, "light");
+test("a narrow phone at 360px never scrolls sideways", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
   await unlock(page);
-  await intake(page, "https://umbc.edu/programs/data-science-mps/");
-  await page.getByRole("button", { name: "Read resume", exact: true }).click();
-  await page.getByRole("button", { name: "Find requirements" }).click();
-  await expect(page.getByText("No statement instructions found on umbc.edu, so this uses the default structure, tailored with the program details.").first()).toBeVisible();
-  await page.getByRole("button", { name: "Continue to draft" }).click();
-  await page.getByRole("button", { name: "Write draft" }).click();
-  await expect(page.getByRole("button", { name: "Download .pdf" })).toBeEnabled({ timeout: 60_000 });
-  await page.getByRole("button", { name: "Text view" }).click();
-  await expect(page.getByText("7. Conclusion")).toBeVisible();
-  await shot(page, "1440-light-fallback-default-structure");
+  await onboard(page, "360-light");
+  await page.getByLabel("Link to the program's page").fill(SCU);
+  await page.getByRole("button", { name: "Find the instructions" }).click();
+  await focusedIsH1(page, "What Fixture University asks for");
+  await toggle(page, "Where this came from");
+  await toggle(page, "Pages we searched and read");
+  await shot(page, "360-light-04-instructions");
+  await page.getByRole("button", { name: "Looks right, continue" }).click();
+  await page.getByRole("button", { name: "Write my statement" }).click();
+  await focusedIsH1(page, "Your statement is ready");
+  await toggle(page, "Technical details");
+  await toggle(page, "Earlier versions");
+  await shot(page, "360-light-07-result", { jargon: false });
 });
 
-test("a failed fetch is an error with retry and a paste box, never a silent fallback", async ({ page }) => {
+test("no instructions on the site: say so, offer the paste box, then the standard layout", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openApp(page, "light");
   await unlock(page);
-  await intake(page, "https://fetchfail.example.edu/program");
-  await page.getByRole("button", { name: "Read resume", exact: true }).click();
-  await page.getByRole("button", { name: "Find requirements" }).click();
-  await expect(page.getByText("The program page could not be fetched", { exact: false })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Retry this step" })).toBeVisible();
-  await expect(page.getByPlaceholder("Paste the statement instructions exactly as the university gives them")).toBeVisible();
-  await expect(page.getByText("default structure")).toHaveCount(0);
+  await onboard(page);
+  await page.getByLabel("Link to the program's page").fill("https://umbc.edu/programs/data-science-mps/");
+  await page.getByRole("button", { name: "Find the instructions" }).click();
+  await focusedIsH1(page, "We didn't find instructions for this statement");
+  await expect(page.getByText(/We searched umbc.edu and read 1 page/)).toBeVisible();
+  await expect(page.getByLabel("The program's instructions")).toBeVisible();
+  await shot(page, "1440-light-fallback-no-instructions");
+  await page.getByRole("button", { name: "Continue with a standard layout" }).click();
+  await focusedIsH1(page, "Your statement is ready");
+  await expect(page.getByText("Step 5 of 5")).toBeVisible();
+  await expect(page.getByText("Written in a standard layout because the program's instructions weren't found.")).toBeVisible();
+  await expect(page.getByTestId("textview")).toContainText("7. Conclusion");
+  await shot(page, "1440-light-fallback-result");
+});
+
+test("a page that can't be opened: one Retry, a paste box, never a silent fallback", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await unlock(page);
+  await onboard(page);
+  await page.getByLabel("Link to the program's page").fill("https://fetchfail.example.edu/program");
+  await page.getByRole("button", { name: "Find the instructions" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "We couldn't open that page" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry this step" })).toHaveCount(1);
+  await expect(page.getByText("standard layout")).toHaveCount(0);
+  await expect(page.getByText("program_page_not_fetched")).toBeHidden();
   await shot(page, "1440-light-research-error");
 
-  // Pasting the instructions is the way forward.
-  await page.getByPlaceholder("Paste the statement instructions exactly as the university gives them").fill("Your statement of purpose must not exceed 800 words.");
+  // Retrying fails the same way and still offers exactly one Retry.
+  await page.getByRole("button", { name: "Retry this step" }).click();
+  await expect(page.getByRole("button", { name: "Retry this step" })).toHaveCount(1);
+
+  await page.getByLabel("Or paste the instructions from the program's page").fill("Your statement of purpose must not exceed 800 words.");
   await page.getByRole("button", { name: "Use these instructions" }).click();
-  await expect(page.getByText("Following the instructions you entered.").first()).toBeVisible();
+  await focusedIsH1(page, "What the program asks for");
+  await expect(page.getByText("at most 800 words")).toBeVisible();
+
+  // Home shows what happened to each statement.
+  await page.getByRole("button", { name: /SOP Desk/ }).click();
+  await expect(page.getByText(/fetchfail.example.edu · Waiting for you/)).toBeVisible();
 });
 
-test("an aggregator link is refused", async ({ page }) => {
+test("a listing site is refused where the link is typed", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openApp(page, "light");
   await unlock(page);
-  await intake(page, "https://yocket.com/universities/santa-clara-university");
-  await expect(page.getByText("yocket.com is a listing or discussion site", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: "Read resume", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Find requirements" })).toBeDisabled();
+  await onboard(page);
+  const field = page.getByLabel("Link to the program's page");
+  await field.fill("https://yocket.com/universities/santa-clara-university");
+  await page.getByRole("button", { name: "Find the instructions" }).click();
+  await expect(page.getByText("yocket.com is a listing or discussion site, not the university.", { exact: false }).first()).toBeVisible();
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByRole("heading", { level: 1, name: "Which program is this statement for?" })).toBeVisible();
+
+  // A site it can't classify gets a neutral question instead of an error.
+  await field.fill("https://www.mcgill.ca/gradapplicants/");
+  await field.blur();
+  await expect(page.getByText("Is mcgill.ca the university's own website?")).toBeVisible();
+  await page.getByRole("button", { name: "Yes, it is" }).click();
+  await expect(page.getByText("Is mcgill.ca the university's own website?")).toHaveCount(0);
 });
 
-test("a wrong passcode is rejected by the API", async ({ page, request }) => {
+test("Stop keeps finished work and Continue picks up from there", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await unlock(page);
+  await onboard(page);
+  await page.getByLabel("Link to the program's page").fill(SCU);
+  await page.getByRole("button", { name: "Find the instructions" }).click();
+  await page.getByRole("button", { name: "Looks right, continue" }).click();
+  await page.getByRole("button", { name: "Write my statement" }).click();
+  // Stop once the first draft exists.
+  await expect(page.locator('.stages li[aria-current="step"]').filter({ hasText: /Making it sound natural|Checking it against/ })).toBeVisible();
+  await page.getByRole("button", { name: "Stop" }).click();
+  await focusedIsH1(page, "Stopped");
+  await expect(page.getByText("Everything finished so far is saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await focusedIsH1(page, "Your statement is ready");
+  await toggle(page, "Earlier versions");
+  // Continuing reused the first draft rather than writing a new one.
+  await expect(page.getByText(/Version 1 · first draft/)).toBeVisible();
+  await expect(page.getByText(/Version 2/)).toHaveCount(0);
+});
+
+test("the passcode is checked by the server and explained on the gate", async ({ page, request }) => {
   const res = await request.post("/api/draft", { headers: { "x-app-passcode": "nope" }, data: {} });
   expect(res.status()).toBe(401);
-  await openApp(page, "light");
+  await page.goto("/");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("Enter your passcode first.")).toBeVisible();
   await page.getByLabel("Passcode").fill("wrong");
-  await page.getByRole("button", { name: "Open" }).click();
-  await expect(page.getByText("Wrong passcode.")).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("That passcode didn't work. Check it and try again.")).toBeVisible();
+  await expect(page.getByLabel("Passcode")).toHaveAttribute("aria-invalid", "true");
 });
 
-test("keyboard focus moves through the page in reading order", async ({ page }) => {
+test("keyboard: skip link first, visible focus on every control, focus follows the screen", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openApp(page, "light");
   await unlock(page);
-  await page.getByRole("button", { name: "Got it" }).click();
-  await page.locator("body").click({ position: { x: 5, y: 5 } });
-  const names: string[] = [];
-  for (let i = 0; i < 12; i++) {
+  await focusedIsH1(page, "Start with your resume");
+  // The skip link is the first stop: going back from the first control in the header reaches it.
+  await page.getByRole("button", { name: /SOP Desk/ }).focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();
+  await expect(page.getByRole("link", { name: "Skip to main content" })).toBeInViewport();
+  const seen: string[] = [];
+  // The five controls of the first screen, in reading order.
+  for (let i = 0; i < 5; i++) {
     await page.keyboard.press("Tab");
-    names.push(
+    seen.push(
       await page.evaluate(() => {
         const el = document.activeElement as HTMLElement;
-        const label = el.getAttribute("aria-label") || (el.id && document.querySelector(`label[for="${el.id}"]`)?.textContent) || el.closest("label")?.querySelector("span")?.textContent || el.textContent || "";
-        // Every focused control must show a visible focus ring.
-        const ring = getComputedStyle(el).outlineStyle !== "none";
-        return `${label.trim().slice(0, 40)}${ring ? "" : " [no focus ring]"}`;
+        const style = getComputedStyle(el);
+        const ring = style.outlineStyle !== "none" && style.outlineWidth !== "0px";
+        return `${(el.innerText || el.getAttribute("aria-label") || el.id || el.tagName).trim().slice(0, 30)}${ring ? "" : " [no focus ring]"}`;
       }),
     );
   }
-  expect(names.join(" | ")).not.toContain("[no focus ring]");
-  const order = ["Project", "New project", "Dark theme", "More", "Stop", "Resume and program", "Resume", "Or paste the resume text", "Program link"];
-  const seen = order.filter((o) => names.some((n) => n.startsWith(o))).map((o) => names.findIndex((n) => n.startsWith(o)));
-  expect(seen.length).toBeGreaterThanOrEqual(7);
-  expect([...seen].sort((a, b) => a - b)).toEqual(seen);
+  expect(seen.join(" | ")).not.toContain("[no focus ring]");
+  const order = ["SOP Desk", "Upload your resume", "Paste the text instead", "Using a shared computer?", "Continue"];
+  const idx = order.map((o) => seen.findIndex((s) => s.startsWith(o)));
+  expect(idx.every((i) => i >= 0), seen.join(" | ")).toBe(true);
+  expect([...idx].sort((a, b) => a - b)).toEqual(idx);
+});
+
+test("theme follows the device and can be set in the menu", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await unlock(page);
+  await onboard(page);
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  expect(await bg()).toBe("rgb(22, 21, 18)");
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("radio", { name: "Light" }).check();
+  expect(await bg()).toBe("rgb(246, 243, 236)");
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  expect(await bg()).toBe("rgb(246, 243, 236)");
 });

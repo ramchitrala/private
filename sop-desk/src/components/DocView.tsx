@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DocFormat, DocModel } from "@/lib/types";
 import { SINGLE_LINE_FACTOR } from "@/lib/requirements";
-import { bodyWords } from "@/lib/docmodel";
 import { changedWords } from "@/lib/diff";
-import { getPref, setPref } from "@/lib/client/store";
-import { useDesk } from "./desk";
+
+// The statement as it will print: "Easy to read" is real text in the document's own fonts,
+// "As printed" draws the actual PDF pages.
 
 interface PdfJs {
   GlobalWorkerOptions: { workerSrc: string };
@@ -37,7 +37,7 @@ function loadPdfJs(): Promise<PdfJs> {
 }
 
 /** Page view: the real PDF, rendered page by page. */
-function PageView({ pdf }: { pdf: Uint8Array }) {
+export function PageView({ pdf }: { pdf: Uint8Array }) {
   const holder = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState("");
   useEffect(() => {
@@ -56,8 +56,6 @@ function PageView({ pdf }: { pdf: Uint8Array }) {
           canvas.width = Math.floor(viewport.width);
           canvas.height = Math.floor(viewport.height);
           canvas.style.width = `${Math.round(viewport.width / (scale / 1.34))}px`;
-          canvas.setAttribute("role", "img");
-          canvas.setAttribute("aria-label", `Page ${i} of ${d.numPages}`);
           await page.render({ canvasContext: canvas.getContext("2d")!, viewport, canvas }).promise;
           canvases.push(canvas);
         }
@@ -74,8 +72,8 @@ function PageView({ pdf }: { pdf: Uint8Array }) {
   }, [pdf]);
   return (
     <>
-      {failed && <p className="muted small">Page view is unavailable here ({failed}). Text view shows the same document.</p>}
-      <div className="pages" ref={holder} data-testid="pages" />
+      {failed && <p className="hint">The printed view can&apos;t be shown here. &ldquo;Easy to read&rdquo; shows the same text.</p>}
+      <div className="pages" ref={holder} data-testid="pages" aria-hidden="true" />
     </>
   );
 }
@@ -87,13 +85,28 @@ const FAMILY: Record<DocFormat["font"], string> = {
 };
 
 /** Text view: the document's own type, with the words changed by the last edit marked. */
-function TextView({ doc, prev, format }: { doc: DocModel; prev: DocModel | null; format: DocFormat }) {
+export function TextView({ doc, prev, format }: { doc: DocModel; prev: DocModel | null; format: DocFormat }) {
   const line = SINGLE_LINE_FACTOR * format.lineMultiple;
   const para = (text: string, si: number, pi: number) => {
     const before = prev?.sections[si]?.paragraphs[pi];
     if (!prev || before === text) return text;
-    if (before === undefined) return <mark>{text}</mark>;
-    return changedWords(before, text).map((p, i) => (p.op === "add" ? <mark key={i}>{p.text}</mark> : <span key={i}>{p.text}</span>));
+    if (before === undefined)
+      return (
+        <mark>
+          <span className="sr-only">changed: </span>
+          {text}
+        </mark>
+      );
+    return changedWords(before, text).map((p, i) =>
+      p.op === "add" ? (
+        <mark key={i}>
+          <span className="sr-only">changed: </span>
+          {p.text}
+        </mark>
+      ) : (
+        <span key={i}>{p.text}</span>
+      ),
+    );
   };
   return (
     <div className="pages">
@@ -125,53 +138,3 @@ function TextView({ doc, prev, format }: { doc: DocModel; prev: DocModel | null;
   );
 }
 
-export function Preview() {
-  const { project, built, format, running } = useDesk();
-  const [view, setView] = useState<"page" | "text">("page");
-  useEffect(() => {
-    if (getPref("view") === "text") setView("text");
-  }, []);
-  const choose = (v: "page" | "text") => {
-    setView(v);
-    setPref("view", v);
-  };
-  const doc = project.doc ?? project.preHumanize;
-  const words = useMemo(() => (doc ? bodyWords(doc) : 0), [doc]);
-
-  if (!doc) {
-    return (
-      <div className="pages">
-        <div className="sheet placeholder">
-          <p>
-            Your statement will appear here.
-            <br />
-            <span className="small">Start with your resume and the program&apos;s official page.</span>
-          </p>
-        </div>
-      </div>
-    );
-  }
-  const fmt = built?.format ?? format;
-  return (
-    <>
-      <div className="previewbar">
-        <div className="seg" role="group" aria-label="Preview">
-          <button aria-pressed={view === "page"} onClick={() => choose("page")}>
-            Page view
-          </button>
-          <button aria-pressed={view === "text"} onClick={() => choose("text")}>
-            Text view
-          </button>
-        </div>
-        <span className="muted small num">
-          {words} words{built ? ` · ${built.pageCount} page${built.pageCount > 1 ? "s" : ""}` : ""}
-        </span>
-        {!project.doc && <span className="tag wait">First draft, before the humanizer pass</span>}
-        {project.doc && (
-          <span className={`tag ${project.passed ? "ok" : "wait"}`}>{project.passed ? "Passed review" : running ? "In review" : "Not passed yet"}</span>
-        )}
-      </div>
-      {view === "page" && built && project.doc ? <PageView pdf={built.pdf} /> : <TextView doc={doc} prev={project.doc ? project.prevDoc : null} format={fmt} />}
-    </>
-  );
-}

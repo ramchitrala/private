@@ -301,6 +301,36 @@ export interface Project {
   pending: { applied: string[]; declined: { id: string; reason: string }[]; failed: { id: string; reason: string }[] } | null;
   /** Domains the user confirmed as the university's own. */
   confirmedDomains: string[];
+  /** The profile version whose details were copied into this statement (0 = unknown, from before profiles existed). */
+  profileVersion: number;
+  /** The applicant ticked "I've read this program's rule about writing help". */
+  aiRuleAcknowledged: boolean;
+  /** The last run that failed, kept so the home list can say what happened. */
+  lastError: { stage: string; code: string } | null;
+}
+
+export type FactOrigin = "resume" | "added" | "answer" | "change";
+
+/**
+ * Everything about the person, stored once in the browser and reused for every statement:
+ * the resume, the details read from it, the writing sample and the sites they trust.
+ */
+export interface Profile {
+  id: "me";
+  /** Goes up on every change to the resume or the details. */
+  version: number;
+  updatedAt: string;
+  resume: { kind: ProjectInputs["resumeKind"]; name: string; data: string; text: string; savedAt: string };
+  facts: FactSheet;
+  /** Where each detail came from, kept beside the facts so the fact format sent to the server is unchanged. */
+  factOrigins: Record<string, FactOrigin>;
+  factsConfirmedAt: string | null;
+  voiceSample: string;
+  lastEntryTerm: string;
+  /** Registrable domains the applicant confirmed as a university's own site. */
+  trustedSites: string[];
+  /** False on a shared computer: the profile is then kept in memory only. */
+  remember: boolean;
 }
 
 /** Events sent over the NDJSON stream from every stage route. */
