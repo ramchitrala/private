@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { checkProgramLink, parseExtraLinks, registrableDomain } from "@/lib/domains";
 import { isResearchError, shortDate } from "@/lib/client/labels";
-import { AutoTextarea, Disclosure, ErrorBlock, ErrorSummary, ProgressPanel, ScreenHead, type FieldProblem } from "../ui";
+import { AutoTextarea, Disclosure, ErrorBlock, ErrorSummary, ProgressPanel, ScreenHead, Stopped, type FieldProblem } from "../ui";
 import { useDesk } from "../ctx";
 import { stepFor } from "./steps";
 import { findInstructions } from "./research";
 
 export function ProgramScreen() {
-  const { statement, update, profile, updateProfile, start, run, go, onboarding } = useDesk();
+  const { statement, update, profile, updateProfile, start, run, go, onboarding, announce } = useDesk();
   const [checked, setChecked] = useState(false);
   const [problems, setProblems] = useState<FieldProblem[]>([]);
   if (!statement || !profile) return null;
@@ -52,8 +52,8 @@ export function ProgramScreen() {
     start("Finding the instructions", (rt) => findInstructions(rt), {
       kind: "research",
       after: () => go("instructions"),
-      onError: (code) => {
-        if (isResearchError(code, "research")) go("instructions");
+      onError: (code, failStage) => {
+        if (isResearchError(code, failStage)) go("instructions");
       },
     });
   };
@@ -83,7 +83,7 @@ export function ProgramScreen() {
           Link to the program&apos;s page
         </label>
         <span className="hint" id="program-link-hint">
-          Open the program&apos;s page on the university&apos;s website and copy the address from the top of your browser.
+          Open the program&apos;s page on the university&apos;s website and copy its address (on a phone: Share, then Copy link).
           <br />
           For example: https://www.university.edu/business/ms-information-systems
         </span>
@@ -102,7 +102,11 @@ export function ProgramScreen() {
             if (checked) setChecked(false);
             setProblems([]);
           }}
-          onBlur={() => inputs.programUrl.trim() && setChecked(true)}
+          onBlur={() => {
+            if (!inputs.programUrl.trim()) return;
+            setChecked(true);
+            if (link && !link.ok && link.reason === "unsure") announce(`Is ${registrableDomain(inputs.programUrl)} the university's own website?`);
+          }}
         />
         {invalid && (
           <span className="field-error" id="program-link-error">
@@ -181,6 +185,7 @@ export function ProgramScreen() {
       </Disclosure>
 
       <ErrorBlock kinds={["research"]} />
+      <Stopped kinds={["research"]} />
 
       {running ? (
         <ProgressPanel kinds={["research"]} />

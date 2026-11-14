@@ -111,9 +111,9 @@ export function TextView({ doc, prev, format }: { doc: DocModel; prev: DocModel 
   return (
     <div className="pages">
       <article className="sheet" data-testid="textview" style={{ fontFamily: FAMILY[format.font], fontSize: `${format.sizePt}pt`, lineHeight: line }}>
-        <p className="doc-title" style={{ fontSize: `${format.titlePt}pt` }}>
+        <h2 className="doc-title" style={{ fontSize: `${format.titlePt}pt` }}>
           {doc.title}
-        </p>
+        </h2>
         <div className="doc-header" style={{ lineHeight: SINGLE_LINE_FACTOR * Math.min(format.lineMultiple, 1.2) }}>
           {doc.header.map((h, i) => (
             <p key={i}>{h.label ? <><strong>{h.label}:</strong> {h.value}</> : <strong>{h.value}</strong>}</p>
@@ -122,9 +122,9 @@ export function TextView({ doc, prev, format }: { doc: DocModel; prev: DocModel 
         {doc.sections.map((s, si) => (
           <section key={si}>
             {s.heading && (
-              <p className="doc-heading" style={{ fontSize: `${format.headingPt}pt` }}>
+              <h3 className="doc-heading" style={{ fontSize: `${format.headingPt}pt` }}>
                 {s.heading}
-              </p>
+              </h3>
             )}
             {s.paragraphs.map((p, pi) => (
               <p key={pi} style={{ margin: `0 0 ${format.paraAfterPt}pt`, textIndent: format.firstLineIndentIn ? `${format.firstLineIndentIn}in` : undefined }}>

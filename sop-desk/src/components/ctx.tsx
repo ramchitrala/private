@@ -22,7 +22,10 @@ export interface RunState {
 
 export interface ErrorState {
   kind: RunKind;
+  /** What the applicant was doing, e.g. "Finding the instructions". */
   stage: string;
+  /** The step that actually failed, e.g. "research/gather" or "questions". */
+  failStage: string;
   code: string;
   message: string;
   retry: () => void;
@@ -30,10 +33,18 @@ export interface ErrorState {
 
 export interface StartOptions {
   kind: RunKind;
-  /** Run against the profile (reading a resume) instead of the open statement. */
+  /** The run is about the profile (reading a resume): nothing is recorded on a statement. */
   target?: "statement" | "profile";
+  /** Replace the runtime the run sees, e.g. to read a resume into a draft profile. */
+  wrap?: (base: Runtime) => Runtime;
   after?: () => void;
-  onError?: (code: string) => void;
+  onError?: (code: string, failStage: string) => void;
+}
+
+export interface StoppedState {
+  kind: RunKind;
+  /** Pick the same run up again. */
+  resume: () => void;
 }
 
 export interface Desk {
@@ -51,21 +62,27 @@ export interface Desk {
   removeStatement: (id: string) => Promise<void>;
 
   screen: Screen;
-  go: (screen: Screen) => void;
+  go: (screen: Screen, opts?: { replace?: boolean }) => void;
+  /** Leave "Your resume and details" for wherever the applicant came from. */
+  back: () => void;
   /** True while the applicant is setting up for the first time (resume, details, first statement). */
   onboarding: boolean;
-  setOnboarding: (v: boolean) => void;
+  /** The profile from before a resume replacement, while Undo is still offered. */
+  resumeUndo: Profile | null;
+  setResumeUndo: (p: Profile | null) => void;
 
   run: RunState | null;
   error: ErrorState | null;
   clearError: () => void;
   start: (label: string, fn: (rt: Runtime) => Promise<void>, opts: StartOptions) => void;
   stop: () => void;
-  stopped: RunKind | null;
+  stopped: StoppedState | null;
   clearStopped: () => void;
 
   format: DocFormat | null;
   built: BuiltFiles | null;
+  buildFailed: boolean;
+  rebuild: () => void;
   announce: (message: string) => void;
 }
 

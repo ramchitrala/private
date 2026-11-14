@@ -371,54 +371,73 @@ export function restoreVersion(rt: Runtime, id: string): void {
 
 /* -------------------------------------------------------------- edit chat */
 
+/**
+ * A change request as a run that can be retried: a retry after a failure picks up after the last
+ * finished step, so the change is never made twice.
+ */
+export function chatEdit(request: string): (rt: Runtime) => Promise<void> {
+  let edited: { before: DocModel; note: string; newFacts: string[]; sections: DocSection[] } | null = null;
+  let smoothed = false;
+  let done = false;
+  const say = (rt: Runtime, m: Omit<ChatMessage, "id" | "at">) =>
+    rt.set((x) => (x.chat = [...x.chat, { id: newId("c"), at: new Date().toISOString(), ...m }]));
+
+  return async (rt: Runtime) => {
+    if (done) return;
+    if (!edited) {
+      const start = rt.get();
+      if (!start.doc) throw new StageFailure("edit", "no_draft", "Write a draft first.");
+      const before = cloneDoc(start.doc);
+      // 1. The writer makes the smallest edit that does what was asked.
+      rt.status("Making the change");
+      const res = await rt.call<EditOutput>("/api/edit", { ctx: writingContext(start), sections: before.sections, task: { mode: "chat", request } satisfies EditTask }, "Edit request");
+      say(rt, { role: "user", text: request });
+      if (res.declined) {
+        say(rt, { role: "app", text: `Not changed: ${res.declineReason || "the request conflicts with an official requirement."}` });
+        done = true;
+        return;
+      }
+      const newFacts = res.newFacts.map((f) => cleanText(f).trim()).filter(Boolean);
+      rt.set((x) => {
+        // Facts stated in chat become user facts, so the reviewer accepts them.
+        if (x.facts) for (const text of newFacts) x.facts.items.push({ id: newId("fact"), category: "other", text, source: "user" });
+        x.prevDoc = before;
+        x.doc = assemble(x, res.sections);
+        x.passed = false;
+      });
+      if (sameDoc(rt.get().doc, before)) {
+        say(rt, { role: "app", text: res.note || "Nothing needed to change." });
+        done = true;
+        return;
+      }
+      edited = { before, note: res.note, newFacts, sections: res.sections };
+    }
+
+    // 2. Humanizer rules, on the edited paragraphs only.
+    if (!smoothed) {
+      const old = new Set(edited.before.sections.flatMap((s) => s.paragraphs));
+      const changed = edited.sections.flatMap((s) => s.paragraphs).filter((para) => !old.has(para));
+      if (changed.length) {
+        rt.status("Humanizer pass on the edited text");
+        const p = rt.get();
+        const h = await rt.call<{ sections: DocSection[] }>("/api/humanize", { ctx: writingContext(p), sections: p.doc!.sections, onlyParagraphs: changed }, "Humanize edit");
+        rt.set((x) => (x.doc = assemble(x, h.sections)));
+      }
+      smoothed = true;
+    }
+
+    // 3-4. Lint and review (the lint runs inside each review round), capped per edit.
+    await reviewLoop(rt, rt.info.maxEditReviewRounds, { request, newFacts: edited.newFacts });
+
+    // 5. Files are rebuilt from the new version.
+    rt.status("Preparing your files");
+    await saveVersion(rt, `Edit ${rt.get().versions.filter((v) => v.label.startsWith("Edit")).length + 1}: ${request.slice(0, 80)}`);
+    const end = rt.get();
+    say(rt, { role: "app", text: edited.note || "Changed.", before: bodyToText(edited.before), after: bodyToText(end.doc!) });
+    done = true;
+  };
+}
+
 export async function runChatEdit(rt: Runtime, request: string): Promise<void> {
-  const start = rt.get();
-  if (!start.doc) throw new StageFailure("edit", "no_draft", "Write a draft first.");
-  const before = cloneDoc(start.doc);
-  const say = (m: Omit<ChatMessage, "id" | "at">) => rt.set((x) => (x.chat = [...x.chat, { id: newId("c"), at: new Date().toISOString(), ...m }]));
-  say({ role: "user", text: request });
-
-  // 1. The writer makes the smallest edit that does what was asked.
-  rt.status("Making the change");
-  const res = await rt.call<EditOutput>("/api/edit", { ctx: writingContext(start), sections: before.sections, task: { mode: "chat", request } satisfies EditTask }, "Edit request");
-  if (res.declined) {
-    say({ role: "app", text: `Not changed: ${res.declineReason || "the request conflicts with an official requirement."}` });
-    return;
-  }
-  const newFacts = res.newFacts.map((f) => cleanText(f).trim()).filter(Boolean);
-  rt.set((x) => {
-    // Facts stated in chat become user facts, so the reviewer accepts them.
-    if (x.facts) for (const text of newFacts) x.facts.items.push({ id: newId("fact"), category: "other", text, source: "user" });
-    x.prevDoc = before;
-    x.doc = assemble(x, res.sections);
-    x.passed = false;
-  });
-  if (sameDoc(rt.get().doc, before)) {
-    say({ role: "app", text: res.note || "Nothing needed to change." });
-    return;
-  }
-
-  // 2. Humanizer rules, on the edited paragraphs only.
-  const old = new Set(before.sections.flatMap((s) => s.paragraphs));
-  const changed = res.sections.flatMap((s) => s.paragraphs).filter((para) => !old.has(para));
-  if (changed.length) {
-    rt.status("Humanizer pass on the edited text");
-    const p = rt.get();
-    const h = await rt.call<{ sections: DocSection[] }>("/api/humanize", { ctx: writingContext(p), sections: p.doc!.sections, onlyParagraphs: changed }, "Humanize edit");
-    rt.set((x) => (x.doc = assemble(x, h.sections)));
-  }
-
-  // 3-4. Lint and review (the lint runs inside each review round), capped per edit.
-  await reviewLoop(rt, rt.info.maxEditReviewRounds, { request, newFacts });
-
-  // 5. Files are rebuilt from the new version.
-  rt.status("Preparing your files");
-  await saveVersion(rt, `Edit ${rt.get().versions.filter((v) => v.label.startsWith("Edit")).length + 1}: ${request.slice(0, 80)}`);
-  const end = rt.get();
-  say({
-    role: "app",
-    text: `${res.note || "Changed."} ${end.passed ? "The review passed." : "The review has not passed yet; see the review log."}`,
-    before: bodyToText(before),
-    after: bodyToText(end.doc!),
-  });
+  await chatEdit(request)(rt);
 }

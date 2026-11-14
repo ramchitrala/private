@@ -7,7 +7,7 @@ import { newId } from "@/lib/docmodel";
 import { cleanHidden } from "@/lib/clean";
 import { longDate } from "@/lib/client/labels";
 import { runExtract, runQuestions } from "@/lib/client/pipeline";
-import { AutoTextarea, Disclosure, ErrorBlock, ProgressPanel, ScreenHead, SourceLink } from "../ui";
+import { AutoTextarea, Disclosure, ErrorBlock, ProgressPanel, ScreenHead, SourceLink, Stopped } from "../ui";
 import { useDesk } from "../ctx";
 import { stepFor } from "./steps";
 import { findInstructions } from "./research";
@@ -165,7 +165,7 @@ export function AiRuleBox({ items }: { items: ReqItem[] }) {
 }
 
 /** "Something is wrong or missing": the full editor, for the few who need it. */
-function Editor({ onDone }: { onDone: () => void }) {
+function Editor({ onDone, onUsePasted, pasteProblem }: { onDone: () => void; onUsePasted: () => void; pasteProblem: string }) {
   const { statement, update } = useDesk();
   const [kind, setKind] = useState<ReqKind>("prompt");
   const [text, setText] = useState("");
@@ -299,6 +299,12 @@ function Editor({ onDone }: { onDone: () => void }) {
           Add instruction
         </button>
       </Disclosure>
+      <Disclosure summary="Paste the instructions yourself">
+        <PasteBox label="The program's instructions" hint="Copy them from the application portal or the program's page. They replace the list above." open problem={pasteProblem} />
+        <button type="button" className="btn" onClick={onUsePasted}>
+          Use these instructions
+        </button>
+      </Disclosure>
       <div className="actions">
         <button type="button" className="btn primary" onClick={onDone}>
           Done editing
@@ -400,7 +406,7 @@ export function SearchLog() {
   );
 }
 
-function PasteBox({ label, hint, open }: { label: string; hint: string; open?: boolean }) {
+function PasteBox({ label, hint, open, problem }: { label: string; hint: string; open?: boolean; problem?: string }) {
   const { statement, update } = useDesk();
   return (
     <div className="field" hidden={!open}>
@@ -412,24 +418,38 @@ function PasteBox({ label, hint, open }: { label: string; hint: string; open?: b
       </span>
       <AutoTextarea
         id="pasted"
-        aria-describedby="pasted-hint"
+        aria-describedby={`pasted-hint${problem ? " pasted-error" : ""}`}
+        aria-invalid={problem ? true : undefined}
         value={statement!.inputs.pastedInstructions}
         onChange={(e) => update((p) => (p.inputs.pastedInstructions = cleanHidden(e.target.value).text))}
       />
+      {problem && (
+        <span className="field-error" id="pasted-error">
+          {problem}
+        </span>
+      )}
     </div>
   );
 }
 
 export function InstructionsScreen() {
-  const { statement, getStatement, start, run, go, error, onboarding } = useDesk();
+  const { statement, getStatement, start, run, go, error, onboarding, clearError, update } = useDesk();
   const [editing, setEditing] = useState(false);
+  const [pasteProblem, setPasteProblem] = useState("");
   if (!statement) return null;
   const r = statement.research;
   const step = stepFor("instructions", onboarding, statement);
   const running = !!run && (run.kind === "research" || run.kind === "write");
   const pasted = statement.inputs.pastedInstructions.trim();
 
-  const usePasted = () =>
+  const usePasted = () => {
+    if (!statement.inputs.pastedInstructions.trim()) {
+      setPasteProblem("Paste the instructions first.");
+      document.getElementById("pasted")?.focus();
+      return;
+    }
+    setPasteProblem("");
+    setEditing(false);
     start(
       "Reading the instructions you pasted",
       async (rt) => {
@@ -438,6 +458,19 @@ export function InstructionsScreen() {
       },
       { kind: "research" },
     );
+  };
+
+  const differentLink = () => {
+    clearError();
+    update((p) => (p.inputs.programUrl = ""));
+    go("program");
+    setTimeout(() => document.getElementById("program-link")?.focus(), 0);
+  };
+
+  // Once a statement is written, going back here can change the instructions and write a new version.
+  const written = !!statement.doc;
+  const backTo = written ? () => go("result") : () => go("program");
+  const backLabel = written ? "Back to your statement" : "Back";
 
   /** Continue to the questions if there are any, otherwise straight to writing. */
   const decide = () => {
@@ -448,7 +481,7 @@ export function InstructionsScreen() {
       return;
     }
     go("writing");
-    start("Writing your statement", writeStatement(s.id), { kind: "write", after: () => go("result") });
+    start("Writing your statement", writeStatement(s.id, written ? "Follow the updated instructions." : ""), { kind: "write", after: () => go("result", { replace: true }) });
   };
   const proceed = () => {
     if (statement.questions === null) start("Checking for questions", runQuestions, { kind: "research", after: decide });
@@ -460,19 +493,19 @@ export function InstructionsScreen() {
     const failed = !!error && error.kind === "research";
     return (
       <>
-        <ScreenHead title={failed ? "We couldn't open that page" : "Find the instructions"} step={step} onBack={running ? null : () => go("program")}>
+        <ScreenHead title={failed ? "We couldn't open that page" : "Find the instructions"} step={step} onBack={running ? null : backTo} backLabel={backLabel}>
           {failed && <p className="intro">Some university sites block automatic visits. Nothing was guessed, and your details are saved.</p>}
           {!failed && !running && <p className="intro">We haven&apos;t looked at the program page yet.</p>}
         </ScreenHead>
         {failed && !running && (
           <>
             <ErrorBlock kinds={["research"]} headless />
-            <PasteBox label="Or paste the instructions from the program's page" hint="Copy the statement instructions from the university's page and paste them here." open />
+            <PasteBox label="Or paste the instructions from the program's page" hint="Copy the statement instructions from the university's page and paste them here." open problem={pasteProblem} />
             <div className="actions tight">
-              <button type="button" className="btn" onClick={usePasted} disabled={!pasted}>
+              <button type="button" className="btn" onClick={usePasted}>
                 Use these instructions
               </button>
-              <button type="button" className="btn text" onClick={() => go("program")}>
+              <button type="button" className="btn text" onClick={differentLink}>
                 Use a different link
               </button>
             </div>
@@ -486,6 +519,7 @@ export function InstructionsScreen() {
           </div>
         )}
         <ProgressPanel kinds={["research"]} />
+        <Stopped kinds={["research"]} />
       </>
     );
   }
@@ -529,13 +563,14 @@ export function InstructionsScreen() {
     const pages = r.gather.pages.filter((p) => p.kind !== "pasted").length;
     return (
       <>
-        <ScreenHead title="We didn't find instructions for this statement" step={step} onBack={running ? null : () => go("program")}>
+        <ScreenHead title="We didn't find instructions for this statement" step={step} onBack={running ? null : backTo} backLabel={backLabel}>
           <p className="intro">
             We searched {site} and read {pages} page{pages === 1 ? "" : "s"}. If the application portal shows instructions, paste them here so your statement follows them.
           </p>
         </ScreenHead>
-        <PasteBox label="The program's instructions" hint="Copy them from the application portal or the program's page." open />
+        <PasteBox label="The program's instructions" hint="Copy them from the application portal or the program's page." open problem={pasteProblem} />
         <ErrorBlock kinds={["research", "write"]} />
+        <Stopped kinds={["research", "write"]} />
         {running ? (
           <ProgressPanel kinds={["research", "write"]} />
         ) : (
@@ -546,12 +581,12 @@ export function InstructionsScreen() {
                   Use these instructions
                 </button>
                 <button type="button" className="btn text" onClick={proceed}>
-                  Continue with a standard layout
+                  {written ? "Write a new version with a standard layout" : "Continue with a standard layout"}
                 </button>
               </>
             ) : (
               <button type="button" className="btn primary" onClick={proceed}>
-                Continue with a standard layout
+                {written ? "Write a new version with a standard layout" : "Continue with a standard layout"}
               </button>
             )}
           </div>
@@ -565,7 +600,7 @@ export function InstructionsScreen() {
   /* ---------- found ---------- */
   return (
     <>
-      <ScreenHead title={university ? `What ${university} asks for` : "What the program asks for"} step={step} onBack={running ? null : () => go("program")}>
+      <ScreenHead title={university ? `What ${university} asks for` : "What the program asks for"} step={step} onBack={running ? null : backTo} backLabel={backLabel}>
         <p className="hint note">
           Found on {site} · checked {longDate(r.checkedAt)}
         </p>
@@ -574,17 +609,18 @@ export function InstructionsScreen() {
       <AiRuleBox items={items} />
 
       {editing ? (
-        <Editor onDone={() => setEditing(false)} />
+        <Editor onDone={() => setEditing(false)} onUsePasted={usePasted} pasteProblem={pasteProblem} />
       ) : (
         <>
           <Summary items={items.filter((i) => i.kind !== "aiPolicy")} />
           <ErrorBlock kinds={["research", "write"]} />
+          <Stopped kinds={["research", "write"]} />
           {running ? (
             <ProgressPanel kinds={["research", "write"]} />
           ) : (
             <div className="actions">
               <button type="button" className="btn primary" onClick={proceed}>
-                Looks right, continue
+                {written ? "Looks right, write a new version" : "Looks right, continue"}
               </button>
               <button type="button" className="btn text" onClick={() => setEditing(true)}>
                 Something is wrong or missing

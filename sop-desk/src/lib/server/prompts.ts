@@ -246,7 +246,7 @@ ${styleRules(ctx)}
 
 Declining: you may decline a requested change only when it conflicts with an official requirement (for example it would break a word limit or drop a required prompt) or with something the applicant asked for in their notes. In that case set "declined" to true, give the reason in one sentence in "declineReason", and return the sections unchanged. Otherwise set "declined" to false and "declineReason" to an empty string.
 
-If the applicant's request states a new fact about themselves (for example "I also won the X award"), use it, and list each such fact as a plain sentence in "newFacts". Otherwise return an empty list. Put a one-sentence description of what you changed in "note".
+If the applicant's request states a new fact about themselves (for example "I also won the X award"), use it, and list each such fact as a plain sentence in "newFacts". Otherwise return an empty list. Put a one-sentence description of what you changed in "note", written to the applicant in plain words (for example "I shortened the second paragraph."). Do not use words like "fact", "prompt", "requirement" or "lint".
 
 ${DATA_RULE}`;
 }

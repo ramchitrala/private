@@ -317,10 +317,10 @@ export function mockEdit(
   const award = req.match(/\bI (?:also )?(?:won|received|earned) ([^.]+)\.?/i);
   if (award) {
     last.paragraphs[last.paragraphs.length - 1] += ` I also received ${award[1].trim()}.`;
-    return { ...base, sections: copy, newFacts: [`Received ${award[1].trim()}`], note: "Added the new fact to the closing paragraph." };
+    return { ...base, sections: copy, newFacts: [`Received ${award[1].trim()}`], note: "I added the award to the closing paragraph." };
   }
   last.paragraphs[last.paragraphs.length - 1] += " I am ready to start in the fall.";
-  return { ...base, sections: copy, note: "Mock edit: added one sentence to the closing paragraph." };
+  return { ...base, sections: copy, note: "I added one sentence to the closing paragraph." };
 }
 
 export function mockFactSheet(): FactSheet {

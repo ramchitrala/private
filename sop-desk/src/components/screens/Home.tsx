@@ -8,7 +8,7 @@ import { ScreenHead } from "../ui";
 import { useDesk } from "../ctx";
 
 export function Home({ migrated, onMigratedSeen }: { migrated: boolean; onMigratedSeen: () => void }) {
-  const { profile, statements, openStatement, startStatement, removeStatement, go, setOnboarding } = useDesk();
+  const { profile, statements, openStatement, startStatement, removeStatement, go } = useDesk();
   const [confirming, setConfirming] = useState("");
   const count = profile?.facts.items.length ?? 0;
 
@@ -56,10 +56,7 @@ export function Home({ migrated, onMigratedSeen }: { migrated: boolean; onMigrat
         <button
           type="button"
           className="btn primary"
-          onClick={() => {
-            setOnboarding(false);
-            startStatement();
-          }}
+          onClick={startStatement}
         >
           Start a new statement
         </button>
@@ -78,7 +75,14 @@ export function Home({ migrated, onMigratedSeen }: { migrated: boolean; onMigrat
                     <button type="button" className="statement-link" onClick={() => openStatement(p.id)}>
                       <span className="t">{program}</span>
                       <span className="s">
-                        {[university, status, shortDate(p.updatedAt)].filter(Boolean).join(" · ")}
+                        {[university, status, shortDate(p.updatedAt)]
+                          .filter(Boolean)
+                          .map((part, i) => (
+                            <span key={i} className="nowrap">
+                              {i > 0 ? " · " : ""}
+                              {part}
+                            </span>
+                          ))}
                       </span>
                       {detailsChangedSince(p, profile) && <span className="s">Your details changed after this was written</span>}
                     </button>

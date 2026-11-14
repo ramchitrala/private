@@ -161,7 +161,8 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByLabel("Describe it in your own words")).toHaveValue("Make it shorter");
       await page.getByLabel("Describe it in your own words").fill("I also won the Regional Data Prize in 2024.");
       await page.getByRole("button", { name: "Make this change" }).click();
-      await expect(page.getByText("Changed: Added the new fact to the closing paragraph.")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByText("Changed: I added the award to the closing paragraph.")).toBeVisible({ timeout: 60_000 });
+      await expect(page.locator("#change-result")).toBeFocused();
       await expect(page.getByText(/Saved to your details for future statements: “Received the Regional Data Prize in 2024”/)).toBeVisible();
       await expect(page.getByText("Underlined words changed with your last request.")).toBeVisible();
       await expect(page.locator('[data-testid="textview"] mark').first()).toBeVisible();
@@ -353,8 +354,8 @@ test("keyboard: skip link first, visible focus on every control, focus follows t
   await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();
   await expect(page.getByRole("link", { name: "Skip to main content" })).toBeInViewport();
   const seen: string[] = [];
-  // The five controls of the first screen, in reading order.
-  for (let i = 0; i < 5; i++) {
+  // The six controls of the first screen, in reading order.
+  for (let i = 0; i < 6; i++) {
     await page.keyboard.press("Tab");
     seen.push(
       await page.evaluate(() => {
@@ -366,7 +367,7 @@ test("keyboard: skip link first, visible focus on every control, focus follows t
     );
   }
   expect(seen.join(" | ")).not.toContain("[no focus ring]");
-  const order = ["SOP Desk", "Upload your resume", "Paste the text instead", "Using a shared computer?", "Continue"];
+  const order = ["SOP Desk", "Menu", "Upload your resume", "Paste the text instead", "Using a shared computer?", "Continue"];
   const idx = order.map((o) => seen.findIndex((s) => s.startsWith(o)));
   expect(idx.every((i) => i >= 0), seen.join(" | ")).toBe(true);
   expect([...idx].sort((a, b) => a - b)).toEqual(idx);
@@ -385,4 +386,76 @@ test("theme follows the device and can be set in the menu", async ({ page }) => 
   await page.reload();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   expect(await bg()).toBe("rgb(246, 243, 236)");
+});
+
+test("deleting your resume and details stays deleted after a reload", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await unlock(page);
+  await onboard(page);
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("button", { name: "Your resume and details" }).click();
+  await focusedIsH1(page, "Your resume and details");
+  await page.getByRole("button", { name: "Delete my resume and details" }).click();
+  await page.getByRole("button", { name: "Delete them" }).click();
+  await focusedIsH1(page, "Start with your resume");
+  await page.reload();
+  await focusedIsH1(page, "Start with your resume");
+});
+
+test("the browser's Back button leaves the result, and a second statement has four steps", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await unlock(page);
+  await onboard(page);
+  await page.getByLabel("Link to the program's page").fill(SCU);
+  await page.getByRole("button", { name: "Find the instructions" }).click();
+  await page.getByRole("button", { name: "Looks right, continue" }).click();
+  await page.getByRole("button", { name: "Write my statement" }).click();
+  await focusedIsH1(page, "Your statement is ready");
+  await page.goBack();
+  await expect(page.getByRole("heading", { level: 1, name: "A few optional questions" })).toBeVisible();
+  await page.goForward();
+  await expect(page.getByRole("heading", { level: 1, name: "Your statement is ready" })).toBeVisible();
+
+  // Starting another statement from the result: the first-visit steps are over.
+  await page.getByRole("button", { name: "Download PDF" }).click();
+  await page.getByRole("button", { name: "Start a new statement" }).click();
+  await focusedIsH1(page, "Which program is this statement for?");
+  await expect(page.getByText("Step 1 of 4")).toBeVisible();
+  await page.getByRole("button", { name: "Back to My statements" }).click();
+  await focusedIsH1(page, "My statements");
+
+  // Back through history to the first statement's result shows that statement, not an empty page.
+  await page.goBack();
+  await page.goBack();
+  await expect(page.getByRole("heading", { level: 1, name: "Your statement is ready" })).toBeVisible();
+  await expect(page.getByTestId("textview")).toContainText("Maya Okafor");
+});
+
+test("the menu is there from the first screen, so a backup can be restored on a new computer", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await unlock(page);
+  await focusedIsH1(page, "Start with your resume");
+  await page.getByRole("button", { name: "Menu" }).click();
+  await expect(page.getByRole("button", { name: "Restore from a backup" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "My statements" })).toHaveCount(0);
+  await shot(page, "1440-light-first-menu");
+});
+
+test("stopping a resume replacement keeps the details you had", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await unlock(page);
+  await onboard(page);
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("button", { name: "Your resume and details" }).click();
+  await page.getByRole("button", { name: "Replace your resume" }).click();
+  await focusedIsH1(page, "Replace your resume");
+  await toggle(page, "Paste the text instead");
+  await page.getByLabel("Your resume text").fill("A different resume with enough words to be read as a resume by the app.");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Read my new resume" }).click();
+  await page.getByRole("button", { name: "Stop" }).click();
+  await expect(page.getByText("Everything finished so far is saved.")).toBeVisible();
+  await page.reload();
+  await focusedIsH1(page, "My statements");
+  await expect(page.getByText(/· 11 details ·/)).toBeVisible();
 });

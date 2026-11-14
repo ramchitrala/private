@@ -141,6 +141,32 @@ export function ErrorBlock({
   );
 }
 
+/** After Stop: say that nothing finished was lost, and offer to pick the same run up again. */
+export function Stopped({ kinds, label = "Continue" }: { kinds: RunKind[]; label?: string }) {
+  const { stopped, run, clearStopped } = useDesk();
+  const ref = useRef<HTMLParagraphElement>(null);
+  const show = !!stopped && !run && kinds.includes(stopped.kind);
+  useEffect(() => {
+    if (show) ref.current?.focus();
+  }, [show]);
+  if (!show || !stopped) return null;
+  return (
+    <div className="notice">
+      <p tabIndex={-1} ref={ref}>
+        <strong>Stopped.</strong> Everything finished so far is saved.
+      </p>
+      <div className="row">
+        <button type="button" className="btn" onClick={stopped.resume}>
+          {label}
+        </button>
+        <button type="button" className="btn text" onClick={clearStopped}>
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** A textarea that grows with its content (CSS field-sizing where supported, script elsewhere). */
 export function AutoTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const ref = useRef<HTMLTextAreaElement>(null);

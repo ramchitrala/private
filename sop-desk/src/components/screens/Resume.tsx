@@ -2,10 +2,11 @@
 
 import { useRef, useState } from "react";
 import { cleanHidden } from "@/lib/clean";
-import { hasResume } from "@/lib/client/store";
+import { emptyProfile, hasResume } from "@/lib/client/store";
 import { runFacts } from "@/lib/client/pipeline";
+import { profileRuntime } from "@/lib/client/profile";
 import type { Profile } from "@/lib/types";
-import { AutoTextarea, Disclosure, ErrorBlock, ErrorSummary, ProgressPanel, ScreenHead, type FieldProblem } from "../ui";
+import { AutoTextarea, Disclosure, ErrorBlock, ErrorSummary, ProgressPanel, ScreenHead, Stopped, type FieldProblem } from "../ui";
 import { useDesk } from "../ctx";
 import { stepFor } from "./steps";
 
@@ -23,8 +24,8 @@ function toBase64(buffer: ArrayBuffer): string {
  * The resume is kept on a draft copy until it has been read, so a failed read never loses the old one.
  */
 export function ResumeScreen() {
-  const { profile, onboarding, statement, start, run, go, updateProfile, setProfile, announce } = useDesk();
-  const replacing = !onboarding && hasResume(profile);
+  const { profile, onboarding, statement, start, run, go, back, setProfile, setResumeUndo, announce } = useDesk();
+  const replacing = hasResume(profile) && !!profile?.factsConfirmedAt;
   const [draft, setDraft] = useState(() => ({
     kind: replacing ? ("" as Profile["resume"]["kind"]) : (profile?.resume.kind ?? ""),
     name: replacing ? "" : (profile?.resume.name ?? ""),
@@ -51,34 +52,47 @@ export function ResumeScreen() {
     if (file.size > MAX_BYTES) return setFileProblem("That file is over 3 MB. Try a smaller file, or paste the text instead.");
     const data = toBase64(await file.arrayBuffer());
     setDraft({ kind: ext, name: file.name, data, text: "" });
+    setPasteOpen(false);
     announce(`${file.name} added`);
+    // The upload button is replaced by the file name; keep focus on the control that took its place.
+    setTimeout(() => document.getElementById("resume-replace")?.focus(), 0);
+  };
+
+  const usePaste = () => {
+    setDraft({ kind: "", name: "", data: "", text: "" });
+    setPasteOpen(true);
+    setTimeout(() => document.getElementById("resume-text")?.focus(), 0);
   };
 
   const read = () => {
-    // Put the new resume into the profile, then read it. On a replacement, the old details read
-    // from a resume are dropped first; anything the applicant typed stays.
+    // The new resume is read into a copy of the profile. Only a finished read replaces the saved one,
+    // so Stop or a failure leaves your resume and details exactly as they were.
     const previous = profile ? structuredClone(profile) : null;
-    updateProfile((p) => {
-      p.resume = { kind: draft.kind, name: draft.kind === "text" ? "Pasted resume text" : draft.name, data: draft.data, text: draft.text, savedAt: new Date().toISOString() };
-      p.remember = remember;
-      if (replacing) {
-        p.facts.items = p.facts.items.filter((f) => f.source === "user");
-        for (const id of Object.keys(p.factOrigins)) if (!p.facts.items.some((f) => f.id === id)) delete p.factOrigins[id];
-      }
-    });
+    const pending = structuredClone(profile ?? emptyProfile());
+    pending.resume = { kind: draft.kind, name: draft.kind === "text" ? "Pasted resume text" : draft.name, data: draft.data, text: draft.text, savedAt: new Date().toISOString() };
+    pending.remember = remember;
+    if (replacing) {
+      // Details read from the old resume are replaced; anything the applicant typed stays.
+      pending.facts.items = pending.facts.items.filter((f) => f.source === "user");
+      for (const id of Object.keys(pending.factOrigins)) if (!pending.facts.items.some((f) => f.id === id)) delete pending.factOrigins[id];
+    }
     start("Reading your resume", runFacts, {
       kind: "resume",
       target: "profile",
+      wrap: (base) => profileRuntime(base, () => pending, (mutate) => mutate(pending)),
       after: () => {
+        if (!pending.facts.items.length) {
+          setProblems([{ id: "resume-text", message: "We couldn't find any details in that resume. Paste its text instead." }]);
+          usePaste();
+          return;
+        }
+        pending.version = Math.max(pending.version, (previous?.version ?? 0) + 1);
+        setProfile(pending);
         if (replacing && previous) {
-          window.sessionStorage?.setItem("sopdesk.undoResume", JSON.stringify(previous));
+          setResumeUndo(previous);
           announce("Resume replaced.");
         }
         go(replacing ? "profile" : "details");
-      },
-      onError: () => {
-        // Reading failed: keep the details from before, so nothing is lost.
-        if (replacing && previous) setProfile(previous);
       },
     });
   };
@@ -122,7 +136,7 @@ export function ResumeScreen() {
         {draft.data ? (
           <div className="row">
             <span className="wrap">{draft.name}</span>
-            <button type="button" className="btn text" onClick={() => fileInput.current?.click()}>
+            <button type="button" id="resume-replace" className="btn text" aria-label={`Replace ${draft.name}`} onClick={() => fileInput.current?.click()}>
               Replace
             </button>
           </div>
@@ -131,12 +145,16 @@ export function ResumeScreen() {
             type="button"
             id="resume-upload"
             className="btn block"
-            aria-describedby={`resume-hint${fileProblem ? " resume-file-error" : ""}`}
-            aria-invalid={problems.length && !pasteOpen ? true : undefined}
+            aria-describedby={`resume-hint${fileProblem ? " resume-file-error" : ""}${problems.length && !pasteOpen ? " resume-missing" : ""}`}
             onClick={() => fileInput.current?.click()}
           >
             Upload your resume
           </button>
+        )}
+        {problems.length > 0 && !pasteOpen && (
+          <span className="field-error" id="resume-missing">
+            {problems[0].message}
+          </span>
         )}
         <input
           ref={fileInput}
@@ -158,8 +176,7 @@ export function ResumeScreen() {
         )}
       </div>
 
-      {!draft.data && (
-        <Disclosure summary="Paste the text instead" open={pasteOpen} onToggle={setPasteOpen}>
+      <Disclosure summary="Paste the text instead" open={pasteOpen} onToggle={setPasteOpen}>
           <div className="field">
             <label className="label" htmlFor="resume-text">
               Your resume text
@@ -168,6 +185,7 @@ export function ResumeScreen() {
               id="resume-text"
               value={draft.text}
               aria-invalid={problems.length && pasteOpen ? true : undefined}
+              aria-describedby={problems.length && pasteOpen ? "resume-text-error" : undefined}
               onChange={(e) => {
                 // Pasted resumes often carry hidden characters; they are removed on the way in.
                 const report = cleanHidden(e.target.value);
@@ -176,10 +194,14 @@ export function ResumeScreen() {
                 setProblems([]);
               }}
             />
+            {problems.length > 0 && pasteOpen && (
+              <span className="field-error" id="resume-text-error">
+                {problems[0].message}
+              </span>
+            )}
             {cleaned > 0 && <span className="hint">Removed {cleaned} hidden or unusual characters.</span>}
           </div>
-        </Disclosure>
-      )}
+      </Disclosure>
 
       <p className="hint section">Your resume is sent to an AI service to be read, and saved only in this browser.</p>
 
@@ -196,7 +218,7 @@ export function ResumeScreen() {
       </Disclosure>
 
       {confirmReplace && !running && (
-        <div className="notice" role="group" aria-labelledby="replace-q">
+        <div className="notice" role="group" aria-labelledby="replace-q" tabIndex={-1} ref={(el) => el?.focus()}>
           <p id="replace-q">
             <strong>Read your new resume?</strong>
           </p>
@@ -208,7 +230,7 @@ export function ResumeScreen() {
             <button type="button" className="btn primary" onClick={read}>
               Read my new resume
             </button>
-            <button type="button" className="btn text" onClick={() => go("profile")}>
+            <button type="button" className="btn text" onClick={back}>
               Keep my current resume
             </button>
           </div>
@@ -216,10 +238,11 @@ export function ResumeScreen() {
       )}
 
       <ErrorBlock kinds={["resume"]}>
-        <button type="button" className="btn text" onClick={() => setPasteOpen(true)}>
+        <button type="button" className="btn text" onClick={usePaste}>
           Paste the text instead
         </button>
       </ErrorBlock>
+      <Stopped kinds={["resume"]} label="Read my resume" />
 
       {running ? (
         <ProgressPanel kinds={["resume"]} />

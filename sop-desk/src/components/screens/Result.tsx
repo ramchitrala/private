@@ -11,8 +11,8 @@ import { dateTime, errorFor } from "@/lib/client/labels";
 import { download, MIME } from "@/lib/client/files";
 import { detailsChangedSince, getPref, setPref } from "@/lib/client/store";
 import { newUserFacts } from "@/lib/client/profile";
-import { openCorrections, restoreVersion, reviewLoop, runChatEdit, saveVersion } from "@/lib/client/pipeline";
-import { AutoTextarea, Disclosure, ErrorBlock, ProgressPanel, ScreenHead, SourceLink } from "../ui";
+import { chatEdit, openCorrections, restoreVersion, reviewLoop, saveVersion } from "@/lib/client/pipeline";
+import { AutoTextarea, Disclosure, ErrorBlock, ProgressPanel, ScreenHead, SourceLink, Stopped } from "../ui";
 import { PageView, TextView } from "../DocView";
 import { useDesk } from "../ctx";
 import { stepFor } from "./steps";
@@ -97,12 +97,13 @@ function OpenPoint({ o }: { o: CorrectionOutcome }) {
 
 export function ResultScreen() {
   const desk = useDesk();
-  const { statement, profile, updateProfile, update, start, run, go, built, format, info, onboarding, startStatement, getStatement, announce } = desk;
+  const { statement, profile, updateProfile, update, start, run, go, built, buildFailed, rebuild, format, info, onboarding, startStatement, getStatement, announce } = desk;
   const [view, setView] = useState<"text" | "print">("text");
   const [request, setRequest] = useState("");
   const [note, setNote] = useState("");
   const [downloaded, setDownloaded] = useState(false);
   const [ackProblem, setAckProblem] = useState(false);
+  const [requestProblem, setRequestProblem] = useState(false);
   const [lastChange, setLastChange] = useState<{ prevVersionId: string; saved: FactItem[]; request: string } | null>(null);
   const [compare, setCompare] = useState("");
   const ackRef = useRef<HTMLInputElement>(null);
@@ -111,6 +112,10 @@ export function ResultScreen() {
     // "As printed" is remembered only on wide screens; phones always start with "Easy to read".
     if (getPref("view") === "print" && window.matchMedia?.("(min-width: 820px)").matches) setView("print");
   }, []);
+
+  // A new version means the files on the applicant's computer are out of date.
+  const docKey = statement?.currentVersionId ?? "";
+  useEffect(() => setDownloaded(false), [docKey]);
 
   const p = statement;
   const fmt = built?.format ?? format;
@@ -152,37 +157,48 @@ export function ResultScreen() {
   const askFor = (text: string) => {
     const req = text.trim();
     if (!req) {
+      setRequestProblem(true);
       document.getElementById("change-request")?.focus();
       return;
     }
+    setRequestProblem(false);
     const before = getStatement()!;
     const prevVersionId = before.currentVersionId;
+    const chatLength = before.chat.length;
     setRequest("");
-    start("Making your change", (rt) => runChatEdit(rt, req), {
+    setLastChange(null);
+    start("Making your change", chatEdit(req), {
       kind: "change",
       after: () => {
         const after = getStatement()!;
+        const reply = after.chat.slice(chatLength).find((m) => m.role === "app");
+        const declined = !!reply?.text.startsWith("Not changed");
         // Details stated in a change request are saved for later statements, with Undo.
-        const saved = newUserFacts(before, after);
-        if (saved.length) {
-          updateProfile((pr) => {
-            for (const f of saved) {
-              if (pr.facts.items.some((x) => x.text === f.text)) continue;
-              pr.facts.items.push({ ...f });
-              pr.factOrigins[f.id] = "change";
-            }
-            pr.version += 1;
-          });
-          // The statement already has these details, so it is as current as the profile it came from.
-          if (before.profileVersion >= (profile?.version ?? 0)) update((s) => (s.profileVersion = (profile?.version ?? 0) + 1));
+        const saved: FactItem[] = [];
+        if (!declined && profile) {
+          const fresh = newUserFacts(before, after).filter((f) => !profile.facts.items.some((x) => x.text === f.text));
+          if (fresh.length) {
+            saved.push(...fresh);
+            updateProfile((pr) => {
+              for (const f of fresh) {
+                pr.facts.items.push({ ...f });
+                pr.factOrigins[f.id] = "change";
+              }
+              pr.version += 1;
+            });
+            // The statement already has these details, so it is as current as the profile it came from.
+            if (before.profileVersion >= profile.version) update((st) => (st.profileVersion = profile.version + 1));
+          }
         }
         setLastChange({ prevVersionId: after.currentVersionId !== prevVersionId ? prevVersionId : "", saved, request: req });
-        announce("Your change is done.");
+        announce(declined ? "Not changed." : "Your change is done.");
+        setTimeout(() => document.getElementById("change-result")?.focus(), 0);
       },
     });
   };
 
-  const checkAgain = () =>
+  const checkAgain = () => {
+    go("writing");
     start(
       "Checking it again",
       async (rt) => {
@@ -190,8 +206,9 @@ export function ResultScreen() {
         rt.status("Preparing your files");
         await saveVersion(rt, `Check ${rt.get().versions.length + 1}`);
       },
-      { kind: "change" },
+      { kind: "write", after: () => go("result", { replace: true }) },
     );
+  };
 
   const newVersion = (withNewDetails = false) => {
     if (withNewDetails && profile) {
@@ -203,7 +220,7 @@ export function ResultScreen() {
       });
     }
     go("writing");
-    start("Writing your statement", writeStatement(p.id, withNewDetails ? "Use the updated details." : note.trim()), { kind: "write", after: () => go("result") });
+    start("Writing your statement", writeStatement(p.id, withNewDetails ? "Use the updated details." : note.trim()), { kind: "write", after: () => go("result", { replace: true }) });
   };
 
   const summary = (() => {
@@ -289,9 +306,20 @@ export function ResultScreen() {
       )}
 
       <ErrorBlock kinds={["change", "write"]} />
+      <Stopped kinds={["change"]} />
+
+      {buildFailed && (
+        <div className="error-block" role="alert">
+          <h2>We couldn&apos;t prepare your files</h2>
+          <p>Your statement is saved. Try again to build the PDF and Word file.</p>
+          <button type="button" className="btn primary" onClick={rebuild}>
+            Retry this step
+          </button>
+        </div>
+      )}
 
       {rules.length > 0 && (
-        <>
+        <div className="rule-ack">
           <AiRuleBox items={rules} />
           <label className="check">
             <input
@@ -302,7 +330,7 @@ export function ResultScreen() {
               aria-describedby={ackProblem ? "ack-error" : undefined}
               onChange={(e) => {
                 const v = e.target.checked;
-                update((s) => (s.aiRuleAcknowledged = v));
+                update((st) => (st.aiRuleAcknowledged = v));
                 if (v) setAckProblem(false);
               }}
             />
@@ -313,7 +341,7 @@ export function ResultScreen() {
               Tick the box above first.
             </p>
           )}
-        </>
+        </div>
       )}
 
       <section className="download" aria-labelledby="h-download">
@@ -396,8 +424,8 @@ export function ResultScreen() {
       <section className="section" aria-labelledby="h-change">
         <h2 id="h-change">Want something changed?</h2>
         {lastChange && !busy && lastChat && (
-          <div className="notice" role="status">
-            <p className="wrap">{lastChat.text.startsWith("Not changed") ? lastChat.text : `Changed: ${lastChat.text.replace(/ (The review passed\.|The review has not passed yet; see the review log\.)$/, "")}`}</p>
+          <div className="notice" role="status" id="change-result" tabIndex={-1}>
+            <p className="wrap">{lastChat.text.startsWith("Not changed") ? lastChat.text : `Changed: ${lastChat.text}`}</p>
             {lastChange.prevVersionId && (
               <div className="row">
                 <button
@@ -429,10 +457,14 @@ export function ResultScreen() {
                   type="button"
                   className="link-btn"
                   onClick={() => {
+                    const wasCurrent = !!profile && p.profileVersion >= profile.version;
                     updateProfile((pr) => {
-                      pr.facts.items = pr.facts.items.filter((x) => x.text !== f.text);
+                      pr.facts.items = pr.facts.items.filter((x) => x.id !== f.id);
+                      delete pr.factOrigins[f.id];
                       pr.version += 1;
                     });
+                    // Taking a detail back out of your saved details doesn't make this statement out of date.
+                    if (wasCurrent && profile) update((st) => (st.profileVersion = profile.version + 1));
                     setLastChange((c) => (c ? { ...c, saved: c.saved.filter((x) => x.id !== f.id) } : c));
                   }}
                 >
@@ -452,18 +484,39 @@ export function ResultScreen() {
           <AutoTextarea
             id="change-request"
             className="short"
-            aria-describedby="change-hint"
+            aria-describedby={`change-hint${requestProblem ? " change-error" : ""}`}
+            aria-invalid={requestProblem ? true : undefined}
             value={request}
             disabled={busy}
-            onChange={(e) => setRequest(e.target.value)}
+            onChange={(e) => {
+              setRequest(e.target.value);
+              if (e.target.value.trim()) setRequestProblem(false);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) askFor(request);
             }}
           />
         </div>
-        <div className="chips" role="group" aria-label="Suggestions">
+        {requestProblem && (
+          <p className="field-error" id="change-error">
+            Describe the change first, or pick one of the ideas below.
+          </p>
+        )}
+        <p className="hint chips-label" id="ideas">
+          Ideas:
+        </p>
+        <div className="chips" role="group" aria-labelledby="ideas">
           {["Make it shorter", "Use simpler words", "Say more about my work experience", "Make my career goals clearer"].map((c) => (
-            <button key={c} type="button" className="chip" disabled={busy} onClick={() => setRequest(c)}>
+            <button
+              key={c}
+              type="button"
+              className="chip"
+              disabled={busy}
+              onClick={() => {
+                setRequest(c);
+                setRequestProblem(false);
+              }}
+            >
               {c}
             </button>
           ))}
@@ -491,6 +544,12 @@ export function ResultScreen() {
           <button type="button" className="btn" disabled={busy} onClick={() => newVersion(false)}>
             Write a new version
           </button>
+          <p className="hint section">
+            Something wrong with the instructions or your answers?{" "}
+            <button type="button" className="link-btn" disabled={busy} onClick={() => go("instructions")}>
+              Check the instructions again
+            </button>
+          </p>
         </Disclosure>
       </div>
 
@@ -506,7 +565,7 @@ export function ResultScreen() {
                       <span className="wrap">{row.item.text}</span>
                       <span className="tag">{row.met === true ? "Follows" : row.met === false ? "Doesn't follow yet" : "Checked by SOP Desk"}</span>
                     </div>
-                    <p className="hint num">{row.note}</p>
+                    <p className="hint num">{plainNote(row.item.kind, row.note)}</p>
                     {row.item.quote && <blockquote className="quote">&ldquo;{row.item.quote}&rdquo;</blockquote>}
                     <SourceLink url={row.item.sourceUrl} />
                   </li>
@@ -554,7 +613,7 @@ export function ResultScreen() {
                       Check {r.round}: {r.verdict === "NO_CORRECTIONS" ? "nothing to change" : `${r.outcomes.length} change${r.outcomes.length === 1 ? "" : "s"} suggested`}
                     </h3>
                     <p className="hint num">
-                      {r.wordCount} words, {r.pageCount} page{r.pageCount === 1 ? "" : "s"} · {r.confidence === "HIGH" ? "sure" : r.confidence === "MEDIUM" ? "fairly sure" : "unsure"}
+                      {r.wordCount} words, {r.pageCount} page{r.pageCount === 1 ? "" : "s"}
                     </p>
                     {r.outcomes.map((o) => (
                       <div key={o.correction.id} className="check-item">
@@ -686,6 +745,14 @@ export function ResultScreen() {
       </section>
     </>
   );
+}
+
+/** The checklist's notes, in the words used on this screen. */
+function plainNote(kind: string, note: string): string {
+  if (/^Checked (in review|by the reviewer)$/.test(note)) return "Checked by SOP Desk";
+  if (kind === "fileType") return "Use the Download buttons above";
+  if (note === "No draft yet") return "";
+  return note;
 }
 
 function FragmentRow({ label, value }: { label: string; value: string }) {

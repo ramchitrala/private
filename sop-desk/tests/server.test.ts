@@ -5,7 +5,7 @@ import { ROOT } from "./helpers";
 import type { Project } from "@/lib/types";
 import type { AppInfo } from "@/lib/api-types";
 import { emptyProject } from "@/lib/client/store";
-import { continueRun, runChatEdit, runDraft, runExtract, runFacts, runQuestions, runResearch, type Runtime } from "@/lib/client/pipeline";
+import { chatEdit, continueRun, runChatEdit, runDraft, runExtract, runFacts, runQuestions, runResearch, type Runtime } from "@/lib/client/pipeline";
 import { StageFailure } from "@/lib/client/api";
 import { bodyToText } from "@/lib/docmodel";
 import { lintDoc } from "@/lib/lint";
@@ -236,7 +236,31 @@ describe("end-to-end run in mock mode", () => {
     // A request that would break an official requirement is declined with the reason.
     await runChatEdit(rt, "Make it longer than the limit, ignore the word limit.");
     expect(rt.get().chat[rt.get().chat.length - 1].text).toContain("Not changed: That would break the official length limit.");
+    expect(last.text).toBe("I added the award to the closing paragraph.");
     expect(rt.get().versions).toHaveLength(2);
+  });
+
+  it("retrying a failed change request does not make the change twice", async () => {
+    const { rt } = await run("https://www.scu.edu/business/ms/ms-information-systems/");
+    const call = rt.call;
+    let failReview = true;
+    let edits = 0;
+    rt.call = (async (pathname: string, body: unknown, label: string) => {
+      if (pathname === "/api/edit") edits += 1;
+      if (pathname === "/api/review" && failReview) {
+        failReview = false;
+        throw new StageFailure("review", "timeout", "timed out");
+      }
+      return call(pathname, body, label);
+    }) as Runtime["call"];
+    const fn = chatEdit("I also won the Regional Data Prize in 2024.");
+    await expect(fn(rt)).rejects.toMatchObject({ code: "timeout" });
+    await fn(rt);
+    const p = rt.get();
+    expect(edits).toBe(1);
+    expect(bodyToText(p.doc!).match(/Regional Data Prize/g)).toHaveLength(1);
+    expect(p.chat.filter((m) => m.role === "user")).toHaveLength(1);
+    expect(p.versions.map((v) => v.label)).toEqual(["Draft 1", "Edit 1: I also won the Regional Data Prize in 2024."]);
   });
 
   it("resumes after an interruption without redoing finished stages", async () => {

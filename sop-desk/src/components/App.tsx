@@ -11,21 +11,23 @@ import {
   emptyProfile,
   getPref,
   hasResume,
+  isMigrated,
   listProjects,
   loadProfile,
+  markMigrated,
   newStatement,
-  openInOtherTab,
   profileFromProjects,
   saveProfile,
   saveProject,
+  setMemoryOnly,
   setPref,
   stampProfileVersion,
   storageBlocked,
+  whenBlocked,
 } from "@/lib/client/store";
 import { formatFor, type Runtime } from "@/lib/client/pipeline";
-import { profileRuntime } from "@/lib/client/profile";
-import { stageFor, type Stage } from "@/lib/client/labels";
-import { DeskContext, type Desk, type ErrorState, type RunKind, type RunState, type Screen, type StartOptions } from "./ctx";
+import { BUSY_LINE, stageFor, type Stage } from "@/lib/client/labels";
+import { DeskContext, type Desk, type ErrorState, type RunState, type Screen, type StartOptions, type StoppedState } from "./ctx";
 import { Gate } from "./screens/Gate";
 import { Home } from "./screens/Home";
 import { ResumeScreen } from "./screens/Resume";
@@ -54,6 +56,14 @@ function screenFor(p: Project): Screen {
 
 const STATEMENT_SCREENS: Screen[] = ["program", "instructions", "questions", "writing", "result"];
 
+/** A history entry may point at a screen whose content no longer exists: fall back to where the statement is. */
+function validScreen(screen: Screen, p: Project): Screen {
+  if (screen === "result" && !p.doc) return screenFor(p);
+  if (screen === "writing" && !p.preHumanize && !p.doc) return screenFor(p);
+  if (screen === "questions" && !p.questions?.length) return screenFor(p);
+  return screen;
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [passcode, setPasscode] = useState("");
@@ -67,11 +77,13 @@ export default function App() {
   const statementRef = useRef<Project | null>(null);
 
   const [screen, setScreen] = useState<Screen>("home");
-  const [onboarding, setOnboarding] = useState(false);
   const [run, setRun] = useState<RunState | null>(null);
   const [error, setError] = useState<ErrorState | null>(null);
-  const [stopped, setStopped] = useState<RunKind | null>(null);
+  const [stopped, setStopped] = useState<StoppedState | null>(null);
   const [built, setBuilt] = useState<BuiltFiles | null>(null);
+  const [buildFailed, setBuildFailed] = useState(false);
+  const [buildTry, setBuildTry] = useState(0);
+  const [resumeUndo, setResumeUndo] = useState<Profile | null>(null);
   const [live, setLive] = useState("");
   const [blocked, setBlocked] = useState(false);
   const [otherTab, setOtherTab] = useState(false);
@@ -81,6 +93,7 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const screenRef = useRef<Screen>("home");
+  const returnTo = useRef<Screen>("home");
 
   const announce = useCallback((message: string) => {
     // Clear first so the same message is announced again.
@@ -90,68 +103,83 @@ export default function App() {
 
   /* --------------------------------------------------------- navigation */
 
-  const go = useCallback((next: Screen) => {
+  const go = useCallback((next: Screen, opts: { replace?: boolean } = {}) => {
+    if (next === "profile" && screenRef.current !== "profile") returnTo.current = screenRef.current;
     screenRef.current = next;
     setScreen(next);
     try {
-      window.history.pushState({ screen: next, id: statementRef.current?.id ?? "" }, "");
+      const state = { screen: next, id: statementRef.current?.id ?? "" };
+      // A redirect replaces the entry, so the browser's Back never bounces between two screens.
+      if (opts.replace) window.history.replaceState(state, "");
+      else window.history.pushState(state, "");
     } catch {
       /* history unavailable */
     }
   }, []);
 
-  const openStatementObj = useCallback((p: Project, nav = true) => {
-    statementRef.current = p;
-    setStatement(p);
-    setError(null);
-    setStopped(null);
-    setBuilt(null);
-    setPref("lastStatement", p.id);
-    if (nav) go(screenFor(p));
-  }, [go]);
+  /** Write a pending statement save at once (before switching statements or leaving the page). */
+  const flushStatement = useCallback(() => {
+    if (!saveTimer.current) return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    const p = statementRef.current;
+    if (p) void saveProject(p);
+  }, []);
+
+  const openStatementObj = useCallback(
+    (p: Project, nav = true) => {
+      flushStatement();
+      statementRef.current = p;
+      setStatement(p);
+      setError(null);
+      setStopped(null);
+      setBuilt(null);
+      setBuildFailed(false);
+      setPref("lastStatement", p.id);
+      if (nav) go(screenFor(p));
+    },
+    [go, flushStatement],
+  );
 
   /* ----------------------------------------------------------- loading */
 
   useEffect(() => {
+    // If another tab still has the old database open, say so instead of loading forever.
+    whenBlocked(() => setOtherTab(true));
     (async () => {
       const pref = (getPref("theme") as ThemePref) || "system";
       setTheme(pref);
       applyTheme(pref);
       let all = await listProjects();
       let prof = await loadProfile();
-      // Before profiles existed, each statement carried its own resume: build the profile from the latest one.
-      if (!prof && all.length) {
-        const built = profileFromProjects(all);
-        if (built) {
-          prof = built;
-          await saveProfile(built);
-          all = all.map((p) => stampProfileVersion(p, built));
-          await Promise.all(all.map(saveProject));
-          if (!getPref("migrated")) {
+      setOtherTab(false);
+      whenBlocked(null);
+      // Once only: before profiles existed, each statement carried its own resume, so build the profile
+      // from the latest one. After that, a missing profile means the applicant deleted it or chose not to keep it.
+      if (!(await isMigrated())) {
+        if (!prof && all.length) {
+          const fromOld = profileFromProjects(all);
+          if (fromOld) {
+            prof = fromOld;
+            await saveProfile(fromOld);
+            all = all.map((p) => stampProfileVersion(p, fromOld));
+            await Promise.all(all.map(saveProject));
             setMigrated(true);
-            setPref("migrated", "1");
           }
         }
+        await markMigrated();
       }
       profileRef.current = prof;
       setProfileState(prof);
+      setMemoryOnly(!!prof && !prof.remember);
       setStatements(all);
       setBlocked(storageBlocked());
-      setOtherTab(openInOtherTab());
-      if (!prof || !hasResume(prof)) {
-        setOnboarding(true);
-        screenRef.current = "resume";
-        setScreen("resume");
-      } else if (!prof.factsConfirmedAt) {
-        setOnboarding(true);
-        screenRef.current = "details";
-        setScreen("details");
-      } else {
-        screenRef.current = "home";
-        setScreen("home");
-      }
+      // A resume without any details (a read that never finished) starts over at the resume.
+      const first: Screen = !prof || !hasResume(prof) || !prof.facts.items.length ? "resume" : !prof.factsConfirmedAt ? "details" : "home";
+      screenRef.current = first;
+      setScreen(first);
       try {
-        window.history.replaceState({ screen: screenRef.current, id: "" }, "");
+        window.history.replaceState({ screen: first, id: "" }, "");
       } catch {
         /* ignore */
       }
@@ -169,9 +197,15 @@ export default function App() {
       }
       setReady(true);
     })();
-  }, []);
+    // Leaving the page writes any save that is still waiting.
+    const onHide = () => flushStatement();
+    window.addEventListener("pagehide", onHide);
+    return () => window.removeEventListener("pagehide", onHide);
+  }, [flushStatement]);
 
   // The browser's Back button follows the same path as the in-app Back.
+  const statementsRef = useRef<Project[]>([]);
+  statementsRef.current = statements;
   useEffect(() => {
     const onPop = (e: PopStateEvent) => {
       const state = e.state as { screen?: Screen; id?: string } | null;
@@ -180,18 +214,25 @@ export default function App() {
         window.history.pushState({ screen: screenRef.current, id: statementRef.current?.id ?? "" }, "");
         return;
       }
-      const next = state?.screen ?? "home";
-      if (STATEMENT_SCREENS.includes(next) && !statementRef.current) {
-        screenRef.current = "home";
-        setScreen("home");
-        return;
+      let next = state?.screen ?? "home";
+      if (STATEMENT_SCREENS.includes(next)) {
+        // The entry may belong to another statement: open that one, at a screen that still makes sense.
+        let p = statementRef.current;
+        if (state?.id && state.id !== p?.id) {
+          const other = statementsRef.current.find((x) => x.id === state.id) ?? null;
+          if (other) {
+            openStatementObj(other, false);
+            p = other;
+          } else p = null;
+        }
+        next = p ? validScreen(next, p) : "home";
       }
       screenRef.current = next;
       setScreen(next);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [openStatementObj]);
 
   /* ------------------------------------------------------------ saving */
 
@@ -224,6 +265,7 @@ export default function App() {
   const commitProfile = useCallback(async (next: Profile | null) => {
     profileRef.current = next;
     setProfileState(next);
+    setMemoryOnly(!!next && !next.remember);
     if (profileTimer.current) clearTimeout(profileTimer.current);
     if (!next) return;
     profileTimer.current = setTimeout(async () => {
@@ -257,6 +299,8 @@ export default function App() {
       const next = structuredClone(profileRef.current ?? emptyProfile());
       mutate(next);
       next.updatedAt = new Date().toISOString();
+      // Any later edit ends the chance to undo a resume replacement, so Undo never erases newer work.
+      setResumeUndo(null);
       void commitProfile(next);
     },
     [commitProfile],
@@ -296,7 +340,11 @@ export default function App() {
             projectId: statementRef.current?.id ?? "profile",
             signal: ac.signal,
             onStatus,
-            onBusy: () => setRun((r) => (r ? { ...r, busy: true } : r)),
+            onBusy: () =>
+              setRun((r) => {
+                if (r && !r.busy) announce(BUSY_LINE);
+                return r ? { ...r, busy: true } : r;
+              }),
             onProgress: (chars) => chars > 0 && setRun((r) => (r && r.busy ? { ...r, busy: false } : r)),
           });
           if (opts.target !== "profile" && statementRef.current) {
@@ -305,10 +353,7 @@ export default function App() {
           return data;
         },
       };
-      const rt =
-        opts.target === "profile"
-          ? profileRuntime(base, () => profileRef.current ?? emptyProfile(), updateProfile)
-          : base;
+      const rt = opts.wrap ? opts.wrap(base) : base;
 
       (async () => {
         let ok = false;
@@ -323,12 +368,12 @@ export default function App() {
             setInfo(null);
             setGateMessage("Your passcode was not accepted. Enter it again.");
           } else if (f.code === "stopped" || ac.signal.aborted) {
-            setStopped(opts.kind);
+            setStopped({ kind: opts.kind, resume: () => start(label, fn, opts) });
             announce("Stopped. Everything finished so far is saved.");
           } else {
-            setError({ kind: opts.kind, stage: label, code: f.code, message: f.message, retry: () => start(label, fn, opts) });
-            if (opts.target !== "profile" && statementRef.current) update((p) => (p.lastError = { stage: label, code: f.code }));
-            opts.onError?.(f.code);
+            setError({ kind: opts.kind, stage: label, failStage: f.stage, code: f.code, message: f.message, retry: () => start(label, fn, opts) });
+            if (opts.target !== "profile" && statementRef.current) update((p) => (p.lastError = { stage: f.stage || label, code: f.code }));
+            opts.onError?.(f.code, f.stage);
           }
         } finally {
           abortRef.current = null;
@@ -340,7 +385,7 @@ export default function App() {
         }
       })();
     },
-    [info, passcode, update, updateProfile, announce],
+    [info, passcode, update, announce],
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
@@ -367,20 +412,40 @@ export default function App() {
       return;
     }
     let stale = false;
+    setBuildFailed(false);
     buildFiles(doc, format)
       .then((b) => !stale && setBuilt(b))
-      .catch(() => !stale && setBuilt(null));
+      .catch(() => {
+        if (stale) return;
+        setBuilt(null);
+        setBuildFailed(true);
+      });
     return () => {
       stale = true;
     };
-  }, [doc, format]);
+  }, [doc, format, buildTry]);
+
+  // Reaching My statements ends the first-visit setup: later statements have four steps.
+  useEffect(() => {
+    if (screen === "home" && profile?.factsConfirmedAt && !profile.setupDone) {
+      const next = { ...profile, setupDone: true };
+      void commitProfile(next);
+    }
+  }, [screen, profile, commitProfile]);
 
   /* ------------------------------------------------------------ render */
 
   if (!ready) {
     return (
       <main className="page" id="main">
-        <p className="muted">Loading</p>
+        {otherTab ? (
+          <>
+            <h1>SOP Desk is open in another tab</h1>
+            <p className="intro">Close the other tab, then reload this page. Your work is safe.</p>
+          </>
+        ) : (
+          <p className="muted">Loading</p>
+        )}
       </main>
     );
   }
@@ -398,6 +463,21 @@ export default function App() {
     );
   }
 
+  const createStatement = (prof: Profile): Project => {
+    flushStatement();
+    const p = newStatement(prof);
+    p.confirmedDomains = [...prof.trustedSites];
+    void saveProject(p);
+    setStatements((list) => [p, ...list]);
+    statementRef.current = p;
+    setStatement(p);
+    setError(null);
+    setStopped(null);
+    setBuilt(null);
+    setBuildFailed(false);
+    return p;
+  };
+
   const desk: Desk = {
     info,
     profile,
@@ -414,15 +494,26 @@ export default function App() {
     startStatement: () => {
       const prof = profileRef.current;
       if (!prof) return;
-      const p = newStatement(prof);
-      p.confirmedDomains = [...prof.trustedSites];
-      void saveProject(p);
-      setStatements((list) => [p, ...list]);
-      statementRef.current = p;
-      setStatement(p);
-      setError(null);
-      setStopped(null);
-      setBuilt(null);
+      if (!prof.setupDone) {
+        // The end of the first-visit setup opens the first statement; going back and pressing
+        // "Looks right" again reopens it instead of making another one.
+        const first = prof.firstStatementId ? statementsRef.current.find((x) => x.id === prof.firstStatementId) : undefined;
+        if (first && !first.doc) {
+          openStatementObj(first, false);
+          go("program");
+          return;
+        }
+        if (prof.firstStatementId) {
+          // A second statement: the setup is over.
+          void commitProfile({ ...prof, setupDone: true });
+        } else {
+          const p = createStatement(prof);
+          void commitProfile({ ...prof, firstStatementId: p.id });
+          go("program");
+          return;
+        }
+      }
+      createStatement(profileRef.current ?? prof);
       go("program");
     },
     removeStatement: async (id) => {
@@ -435,8 +526,10 @@ export default function App() {
     },
     screen,
     go,
-    onboarding,
-    setOnboarding,
+    back: () => go(returnTo.current && returnTo.current !== "profile" ? returnTo.current : "home"),
+    onboarding: !profile?.setupDone,
+    resumeUndo,
+    setResumeUndo,
     run,
     error,
     clearError: () => setError(null),
@@ -446,6 +539,8 @@ export default function App() {
     clearStopped: () => setStopped(null),
     format,
     built,
+    buildFailed,
+    rebuild: () => setBuildTry((n) => n + 1),
     announce,
   };
 
@@ -459,12 +554,17 @@ export default function App() {
       </a>
       <header className="header">
         <div className="header-inner">
-        <button type="button" className="brand" onClick={() => !run && go(profile?.factsConfirmedAt ? "home" : screen)} aria-label="SOP Desk, go to My statements">
-          SOP Desk
-        </button>
-        {profile?.factsConfirmedAt ? (
+          <button
+            type="button"
+            className="brand"
+            onClick={() => !run && profile?.factsConfirmedAt && go("home")}
+            aria-label={profile?.factsConfirmedAt ? "SOP Desk, go to My statements" : "SOP Desk"}
+          >
+            SOP Desk
+          </button>
           <Menu
             theme={theme}
+            setUp={!!profile?.factsConfirmedAt}
             onTheme={(t) => {
               setTheme(t);
               applyTheme(t);
@@ -481,29 +581,42 @@ export default function App() {
               setProfileState(null);
               setStatement(null);
               setStatements([]);
+              setResumeUndo(null);
               setPasscode("");
               setInfo(null);
-              setOnboarding(true);
               screenRef.current = "resume";
               setScreen("resume");
             }}
-            onRestored={(prof, list) => {
-              if (prof) {
-                profileRef.current = prof;
-                setProfileState(prof);
+            onRestored={async (restoredProfile, list) => {
+              // Restored details get a version above anything on this computer, so every comparison stays meaningful.
+              const local = profileRef.current;
+              let prof = local;
+              if (restoredProfile) {
+                prof = {
+                  ...restoredProfile,
+                  version: Math.max(local?.version ?? 0, restoredProfile.version) + 1,
+                  factsConfirmedAt: restoredProfile.factsConfirmedAt ?? new Date().toISOString(),
+                  setupDone: true,
+                  remember: true,
+                };
+                await commitProfile(prof);
               }
-              setStatements((all) => [...list, ...all]);
+              const stamped = list.map((st) => ({
+                ...st,
+                profileVersion: prof && JSON.stringify(st.facts) === JSON.stringify(prof.facts) ? prof.version : 0,
+              }));
+              await Promise.all(stamped.map(saveProject));
+              setStatements((all) => [...stamped, ...all]);
+              if (prof?.factsConfirmedAt) go("home");
             }}
           />
-        ) : null}
         </div>
       </header>
       {info.mock && <div className="banner warn">Test mode: answers are samples, not real university instructions.</div>}
       {blocked && <div className="banner warn">This browser is blocking storage, so your work won&apos;t be saved after you close this tab.</div>}
       {!blocked && profile && !profile.remember && <div className="banner warn">Not saved on this computer. Closing this tab clears it.</div>}
-      {otherTab && <div className="banner warn">SOP Desk is open in another tab. Close it, then reload this page.</div>}
 
-      <main id="main" className={`page${current === "result" ? " wide" : ""}`}>
+      <main id="main" className="page">
         {current === "home" && <Home migrated={migrated} onMigratedSeen={() => setMigrated(false)} />}
         {current === "resume" && <ResumeScreen />}
         {current === "details" && <DetailsScreen mode="onboarding" />}

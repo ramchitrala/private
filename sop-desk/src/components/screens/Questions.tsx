@@ -20,7 +20,7 @@ export function QuestionsScreen() {
     });
     update((p) => p.questions?.forEach((q) => (q.skipped = !q.answer.trim())));
     go("writing");
-    start("Writing your statement", writeStatement(statement.id), { kind: "write", after: () => go("result") });
+    start("Writing your statement", writeStatement(statement.id, statement.doc ? "Use my updated answers." : ""), { kind: "write", after: () => go("result", { replace: true }) });
   };
 
   return (
@@ -41,7 +41,6 @@ export function QuestionsScreen() {
             </span>
             <AutoTextarea
               id={q.id}
-              className="short"
               aria-label={q.text}
               aria-describedby={`${q.id}-why`}
               value={q.answer}
@@ -57,7 +56,7 @@ export function QuestionsScreen() {
 
       <div className="actions">
         <button type="button" className="btn primary" onClick={write}>
-          Write my statement
+          {statement.doc ? "Write a new version" : "Write my statement"}
         </button>
         <p className="hint">This usually takes 3 to 6 minutes. Keep this tab open.</p>
       </div>

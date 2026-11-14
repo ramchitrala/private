@@ -57,8 +57,11 @@ describe("plain errors", () => {
       expect(errorFor(code)).toMatchObject({ heading: "We couldn't open that page", kind: "research" });
       expect(isResearchError(code)).toBe(true);
     }
-    expect(isResearchError("timeout", "Finding the instructions")).toBe(true);
-    expect(isResearchError("timeout", "Writing your statement")).toBe(false);
+    expect(isResearchError("timeout", "research/gather")).toBe(true);
+    // A timeout while reading the pages or asking questions is not "couldn't open the page".
+    expect(isResearchError("timeout", "research/extract")).toBe(false);
+    expect(isResearchError("timeout", "questions")).toBe(false);
+    expect(isResearchError("timeout", "Finding the instructions")).toBe(false);
   });
   it("never shows a raw code in the message", () => {
     for (const code of ["busy", "timeout", "max_tokens", "bad_json", "empty_resume", "too_large", "passcode", "refusal", "no_research", "weird_new_code", "link_aggregator"]) {

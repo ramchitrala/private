@@ -98,12 +98,17 @@ const RESEARCH_CODES = [
   "pause_limit",
 ];
 
-/** Turn a stage failure code into words for the applicant. The raw code stays under "Technical details". */
+/**
+ * Turn a stage failure code into words for the applicant. `stage` is the step that failed
+ * (for example "research/gather"). The raw code stays under "Technical details".
+ */
 export function errorFor(code: string, stage = ""): PlainError {
   if (code.startsWith("link_")) {
     return { heading: "That link can't be used", body: "Use the program's page on the university's own website.", kind: "general" };
   }
-  if (RESEARCH_CODES.includes(code) || (/research|instructions/i.test(stage) && ["timeout", "stream", "network", "http"].includes(code))) {
+  // Only a fetch or search that failed means the page couldn't be opened. A timeout counts only when it
+  // happened while fetching (the failing step is "research/gather"), not while reading or asking questions.
+  if (RESEARCH_CODES.includes(code) || (/^research[/-]gather/i.test(stage) && ["timeout", "stream", "http"].includes(code))) {
     return {
       heading: "We couldn't open that page",
       body: "Some university sites block automatic visits. Nothing was guessed, and your details are saved.",
@@ -125,7 +130,7 @@ export function errorFor(code: string, stage = ""): PlainError {
     case "empty_resume":
     case "pdf_text_extraction_failed":
     case "no_resume":
-      return { heading: "We couldn't read text from that file", body: "It may be a scanned image. Try a Word file, or paste the text instead.", kind: "resume-file" };
+      return { heading: "We couldn't read text from that file", body: "It may be a scanned image. Paste the text of your resume instead, or try a different file.", kind: "resume-file" };
     case "too_large":
       return { heading: "That file is over 3 MB", body: "Try a smaller file, or paste the text instead.", kind: "resume-file" };
     case "passcode":

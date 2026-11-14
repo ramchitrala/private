@@ -12,13 +12,16 @@ export function WritingScreen() {
   const writing = run?.kind === "write";
 
   // Nothing running and a finished statement: show it.
+  // (A redirect, so it replaces the history entry: the browser's Back must not bounce back here.)
   useEffect(() => {
-    if (!run && statement?.doc && !stopped && !(error && error.kind === "write")) go("result");
+    if (!run && statement?.doc && !stopped && !(error && error.kind === "write")) go("result", { replace: true });
   }, [run, statement?.doc, stopped, error, go]);
 
   if (!statement) return null;
   const step = stepFor("writing", onboarding, statement);
-  const resume = () => start("Writing your statement", continueWriting(statement.id), { kind: "write", after: () => go("result") });
+  // Continue the run that was stopped; after a reload, continue from the saved draft.
+  const resume = () =>
+    stopped?.kind === "write" ? stopped.resume() : start("Writing your statement", continueWriting(statement.id), { kind: "write", after: () => go("result", { replace: true }) });
 
   if (!writing) {
     if (error && error.kind === "write") {

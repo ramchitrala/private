@@ -14,6 +14,9 @@ const PROFILE_STORE = "profile";
 let dbPromise: Promise<IDBPDatabase> | null = null;
 let blocked = false;
 let otherTab = false;
+let onBlocked: (() => void) | null = null;
+/** Statements are kept in memory only (the applicant turned off remembering on a shared computer). */
+let memoryOnly = false;
 const memory = new Map<string, Project>();
 let memoryProfile: Profile | null = null;
 
@@ -25,8 +28,9 @@ function db(): Promise<IDBPDatabase> {
         if (!d.objectStoreNames.contains(PROFILE_STORE)) d.createObjectStore(PROFILE_STORE, { keyPath: "id" });
       },
       blocked() {
-        // Another tab still has the old version open.
+        // Another tab still has the old version open; the open waits until it closes.
         otherTab = true;
+        onBlocked?.();
       },
       blocking() {
         // A newer tab wants to upgrade: let it.
@@ -57,6 +61,16 @@ export function openInOtherTab(): boolean {
   return otherTab;
 }
 
+/** Be told when the database upgrade is waiting for another tab to close. */
+export function whenBlocked(cb: (() => void) | null): void {
+  onBlocked = cb;
+  if (cb && otherTab) cb();
+}
+
+export function setMemoryOnly(on: boolean): void {
+  memoryOnly = on;
+}
+
 /* ------------------------------------------------------------- statements */
 
 /** Older records lack the fields added with profiles; fill them in. */
@@ -73,15 +87,17 @@ function upgradeProject(p: Project): Project {
 }
 
 export async function listProjects(): Promise<Project[]> {
-  const all = await attempt(
+  const stored = await attempt(
     (d) => d.getAll(STORE) as Promise<Project[]>,
     () => [...memory.values()],
   );
+  const all = memoryOnly ? [...new Map([...stored, ...memory.values()].map((p) => [p.id, p])).values()] : stored;
   return all.map(upgradeProject).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export async function saveProject(project: Project): Promise<void> {
   memory.set(project.id, project);
+  if (memoryOnly) return;
   await attempt(
     async (d) => {
       await d.put(STORE, project);
@@ -101,6 +117,27 @@ export async function deleteProject(id: string): Promise<void> {
 }
 
 /* ---------------------------------------------------------------- profile */
+
+const MIGRATION_KEY = "migrated-to-profile";
+
+/** The one-time move from per-project resumes to the profile has happened (or is no longer wanted). */
+export async function isMigrated(): Promise<boolean> {
+  const marker = await attempt(
+    (d) => d.get(PROFILE_STORE, MIGRATION_KEY) as Promise<{ id: string } | undefined>,
+    () => undefined,
+  );
+  return !!marker || getPref(MIGRATION_KEY) === "1";
+}
+
+export async function markMigrated(): Promise<void> {
+  setPref(MIGRATION_KEY, "1");
+  await attempt(
+    async (d) => {
+      await d.put(PROFILE_STORE, { id: MIGRATION_KEY, at: new Date().toISOString() });
+    },
+    () => undefined,
+  );
+}
 
 export async function loadProfile(): Promise<Profile | null> {
   if (memoryProfile && !memoryProfile.remember) return memoryProfile;
@@ -134,7 +171,14 @@ export async function deleteProfile(): Promise<void> {
 }
 
 function upgradeProfile(p: Profile): Profile {
-  return { ...emptyProfile(), ...p, factOrigins: p.factOrigins ?? {}, trustedSites: p.trustedSites ?? [] };
+  return {
+    ...emptyProfile(),
+    ...p,
+    factOrigins: p.factOrigins ?? {},
+    trustedSites: p.trustedSites ?? [],
+    setupDone: p.setupDone ?? !!p.factsConfirmedAt,
+    firstStatementId: p.firstStatementId ?? "",
+  };
 }
 
 export function emptyProfile(): Profile {
@@ -150,6 +194,8 @@ export function emptyProfile(): Profile {
     lastEntryTerm: "",
     trustedSites: [],
     remember: true,
+    setupDone: false,
+    firstStatementId: "",
   };
 }
 
@@ -189,6 +235,7 @@ export function profileFromProjects(projects: Project[]): Profile | null {
     voiceSample: source.inputs.voiceSample,
     lastEntryTerm: source.inputs.entryTerm,
     trustedSites: [...new Set(projects.flatMap((p) => p.confirmedDomains ?? []))],
+    setupDone: true,
   };
 }
 

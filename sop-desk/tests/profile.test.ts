@@ -8,7 +8,9 @@ import {
   detailsChangedSince,
   emptyProfile,
   emptyProject,
+  isMigrated,
   listProjects,
+  markMigrated,
   loadProfile,
   makeBackup,
   newStatement,
@@ -21,6 +23,7 @@ import { isProgramSpecific, newUserFacts, profileRuntime, rememberAnswers } from
 import { runFacts, type Runtime } from "@/lib/client/pipeline";
 import { checklist, resolveFormat } from "@/lib/requirements";
 import { stepFor } from "@/components/screens/steps";
+import { researchKey } from "@/components/screens/research";
 import { ROOT } from "./helpers";
 
 function projectWithFacts(name: string, updatedAt: string, texts: string[]): Project {
@@ -158,6 +161,12 @@ describe("browser storage", () => {
     expect(await loadProfile()).toBeNull();
   });
 
+  it("remembers that the one-time move to a profile happened", async () => {
+    expect(await isMigrated()).toBe(false);
+    await markMigrated();
+    expect(await isMigrated()).toBe(true);
+  });
+
   it("stores the profile, and keeps it in memory only when the applicant turns remembering off", async () => {
     const prof = { ...emptyProfile(), version: 2, voiceSample: "v" };
     await saveProfile(prof);
@@ -194,6 +203,13 @@ describe("backup and restore", () => {
 });
 
 describe("screens", () => {
+  it("searches again when other official pages or the track change, but not for spacing or order", () => {
+    const a = researchKey("https://x.edu/p", "https://x.edu/a\nhttps://x.edu/b", "Data Analytics");
+    expect(researchKey("https://x.edu/p", " https://x.edu/b  https://x.edu/a ", "data analytics")).toBe(a);
+    expect(researchKey("https://x.edu/p", "https://x.edu/a", "Data Analytics")).not.toBe(a);
+    expect(researchKey("https://x.edu/p", "https://x.edu/a\nhttps://x.edu/b", "Security")).not.toBe(a);
+  });
+
   it("counts steps: six on a first visit, four later, one fewer when there are no questions", () => {
     const s = emptyProject();
     expect(stepFor("resume", true, null)).toEqual({ n: 1, m: 6 });

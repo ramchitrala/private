@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Profile, Project } from "@/lib/types";
-import { deleteAllData, makeBackup, readBackup, saveProfile, saveProject } from "@/lib/client/store";
+import { deleteAllData, makeBackup, readBackup } from "@/lib/client/store";
 import { download } from "@/lib/client/files";
 import { useDesk } from "./ctx";
 
@@ -10,16 +10,19 @@ type ThemePref = "system" | "light" | "dark";
 
 export function Menu({
   theme,
+  setUp,
   onTheme,
   onSignOut,
   onReset,
   onRestored,
 }: {
   theme: ThemePref;
+  /** The first-visit setup is done, so My statements and Your resume and details exist. */
+  setUp: boolean;
   onTheme: (t: ThemePref) => void;
   onSignOut: () => void;
   onReset: () => void;
-  onRestored: (profile: Profile | null, statements: Project[]) => void;
+  onRestored: (profile: Profile | null, statements: Project[]) => Promise<void>;
 }) {
   const { go, profile, statements, run } = useDesk();
   const [open, setOpen] = useState(false);
@@ -79,9 +82,7 @@ export function Menu({
   };
 
   const finishRestore = async (data: { profile: Profile | null; statements: Project[] }, useProfile: boolean) => {
-    for (const s of data.statements) await saveProject(s);
-    if (useProfile && data.profile) await saveProfile(data.profile);
-    onRestored(useProfile ? data.profile : null, data.statements);
+    await onRestored(useProfile ? data.profile : null, data.statements);
     setPendingRestore(null);
     setMessage(`Restored ${data.statements.length} statement${data.statements.length === 1 ? "" : "s"}.`);
   };
@@ -112,13 +113,17 @@ export function Menu({
       </button>
       {open && (
         <div className="menu-panel" id="menu-panel" ref={panel} role="group" aria-label="Menu">
-          <button type="button" className="btn item" disabled={!!run} onClick={() => navigate("home")}>
-            My statements
-          </button>
-          <button type="button" className="btn item" disabled={!!run} onClick={() => navigate("profile")}>
-            Your resume and details
-          </button>
-          <fieldset>
+          {setUp && (
+            <>
+              <button type="button" className="btn item" disabled={!!run} onClick={() => navigate("home")}>
+                My statements
+              </button>
+              <button type="button" className="btn item" disabled={!!run} onClick={() => navigate("profile")}>
+                Your resume and details
+              </button>
+            </>
+          )}
+          <fieldset className="menu-theme">
             <legend>Theme</legend>
             {(
               [
@@ -133,12 +138,16 @@ export function Menu({
               </label>
             ))}
           </fieldset>
-          <button type="button" className="btn item" onClick={backup}>
-            Download a backup
-          </button>
-          <p className="hint menu-note">
-            One file with your resume, details and all statements.
-          </p>
+          {setUp && (
+            <>
+              <button type="button" className="btn item" onClick={backup} aria-describedby="backup-hint">
+                Download a backup
+              </button>
+              <p className="hint menu-note" id="backup-hint">
+                One file with your resume, details and all statements.
+              </p>
+            </>
+          )}
           <button type="button" className="btn item" disabled={!!run} onClick={() => fileInput.current?.click()}>
             Restore from a backup
           </button>
@@ -187,7 +196,7 @@ export function Menu({
               <div className="confirm">
                 <p>
                   Delete your resume, your details and all {statements.length} statement{statements.length === 1 ? "" : "s"} from this browser? This can&apos;t be undone.
-                  Download a backup first if you want to keep them.
+                  {setUp ? " Download a backup first if you want to keep them." : ""}
                 </p>
                 <div className="row">
                   <button

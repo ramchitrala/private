@@ -280,6 +280,8 @@ export interface Project {
   updatedAt: string;
   inputs: ProjectInputs;
   facts: FactSheet | null;
+  /** The link and options the current research was made for; a change means searching again. */
+  researchKey?: string;
   /** Result of the gather call, kept so the extract step can be retried on its own. */
   gathered: { programUrl: string; gather: GatherResult; domains: string[] } | null;
   research: Research | null;
@@ -331,6 +333,10 @@ export interface Profile {
   trustedSites: string[];
   /** False on a shared computer: the profile is then kept in memory only. */
   remember: boolean;
+  /** The first-visit setup (6 steps) is over; later statements have 4 steps. */
+  setupDone: boolean;
+  /** The statement created at the end of the first-visit setup. */
+  firstStatementId: string;
 }
 
 /** Events sent over the NDJSON stream from every stage route. */

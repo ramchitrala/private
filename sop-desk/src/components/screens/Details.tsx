@@ -28,21 +28,15 @@ const ORIGIN_TAG = { resume: "", added: "added by you", answer: "from your answe
  * Details read from the resume are shown as plain lines; each group can be edited.
  */
 export function DetailsScreen({ mode }: { mode: "onboarding" | "profile" }) {
-  const { profile, updateProfile, setProfile, onboarding, statement, go, startStatement, announce } = useDesk();
+  const { profile, updateProfile, setProfile, onboarding, statement, go, back, startStatement, announce, resumeUndo, setResumeUndo } = useDesk();
   const [editing, setEditing] = useState<FactCategory | "">("");
   const [adding, setAdding] = useState("");
   const [removed, setRemoved] = useState<{ item: FactItem; origin: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [undoResume, setUndoResume] = useState<Profile | null>(null);
+  const [emptyProblem, setEmptyProblem] = useState(false);
 
-  useEffect(() => {
-    try {
-      const raw = window.sessionStorage.getItem("sopdesk.undoResume");
-      if (raw && mode === "profile") setUndoResume(JSON.parse(raw) as Profile);
-    } catch {
-      /* ignore */
-    }
-  }, [mode]);
+  // The chance to undo a resume replacement ends when the applicant leaves this screen.
+  useEffect(() => () => setResumeUndo(null), [setResumeUndo]);
 
   useEffect(() => {
     if (!removed) return;
@@ -74,6 +68,7 @@ export function DetailsScreen({ mode }: { mode: "onboarding" | "profile" }) {
     });
     setRemoved({ item, origin });
     announce("Removed. Undo is available.");
+    setTimeout(() => document.getElementById("undo-removed")?.focus(), 0);
   };
 
   const add = () => {
@@ -90,6 +85,10 @@ export function DetailsScreen({ mode }: { mode: "onboarding" | "profile" }) {
   };
 
   const confirm = () => {
+    if (!profile?.facts.items.length) {
+      setEmptyProblem(true);
+      return;
+    }
     updateProfile((p) => (p.factsConfirmedAt = new Date().toISOString()));
     startStatement();
   };
@@ -99,9 +98,17 @@ export function DetailsScreen({ mode }: { mode: "onboarding" | "profile" }) {
 
   return (
     <>
-      <ScreenHead title={title} step={step} onBack={mode === "onboarding" ? () => go("resume") : () => go("home")} backLabel={mode === "onboarding" ? "Back" : "Back to My statements"}>
+      <ScreenHead title={title} step={step} onBack={mode === "onboarding" ? () => go("resume") : back}>
         <p className="intro">This is what we read from your resume. Your statements will use only these details.</p>
+        {mode === "profile" && <p className="hint note">Changes are saved as you make them.</p>}
       </ScreenHead>
+
+      {emptyProblem && !facts.items.length && (
+        <div className="error-block" role="alert">
+          <h2>We didn&apos;t find any details yet</h2>
+          <p>Go back and add your resume again, or add your details below.</p>
+        </div>
+      )}
 
       {mode === "profile" && (
         <div className="notice">
@@ -114,16 +121,15 @@ export function DetailsScreen({ mode }: { mode: "onboarding" | "profile" }) {
               Replace your resume
             </button>
           </div>
-          {undoResume && (
-            <p>
+          {resumeUndo && (
+            <p role="status">
               Resume replaced.{" "}
               <button
                 type="button"
                 className="link-btn"
                 onClick={() => {
-                  setProfile({ ...undoResume, version: (profile.version ?? 0) + 1 });
-                  window.sessionStorage.removeItem("sopdesk.undoResume");
-                  setUndoResume(null);
+                  setProfile({ ...resumeUndo, version: (profile.version ?? 0) + 1 });
+                  setResumeUndo(null);
                   announce("Your old resume and details are back.");
                 }}
               >
@@ -143,7 +149,12 @@ export function DetailsScreen({ mode }: { mode: "onboarding" | "profile" }) {
           type="text"
           autoComplete="name"
           value={facts.applicantName}
-          onChange={(e) => updateProfile((p) => (p.facts.applicantName = e.target.value))}
+          onChange={(e) =>
+            updateProfile((p) => {
+              p.facts.applicantName = e.target.value;
+              p.version += 1;
+            })
+          }
         />
       </div>
 
@@ -152,6 +163,7 @@ export function DetailsScreen({ mode }: { mode: "onboarding" | "profile" }) {
           Removed.{" "}
           <button
             type="button"
+            id="undo-removed"
             className="link-btn"
             onClick={() => {
               updateProfile((p) => {
@@ -176,7 +188,16 @@ export function DetailsScreen({ mode }: { mode: "onboarding" | "profile" }) {
             <div className="row between">
               <h2 id={`h-${cat}`}>{GROUP[cat]}</h2>
               {!isEditing && (
-                <button type="button" className="btn text" aria-label={`Edit ${GROUP[cat]}`} onClick={() => setEditing(cat)}>
+                <button
+                  type="button"
+                  id={`edit-${cat}`}
+                  className="btn text"
+                  aria-label={`Edit ${GROUP[cat]}`}
+                  onClick={() => {
+                    setEditing(cat);
+                    setTimeout(() => document.getElementById(`fact-${items[0].id}`)?.focus(), 0);
+                  }}
+                >
                   Edit
                 </button>
               )}
@@ -197,7 +218,14 @@ export function DetailsScreen({ mode }: { mode: "onboarding" | "profile" }) {
                   ))}
                 </ul>
                 <div className="actions tight">
-                  <button type="button" className="btn" onClick={() => setEditing("")}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      setEditing("");
+                      setTimeout(() => document.getElementById(`edit-${cat}`)?.focus(), 0);
+                    }}
+                  >
                     Done
                   </button>
                 </div>
@@ -245,7 +273,12 @@ export function DetailsScreen({ mode }: { mode: "onboarding" | "profile" }) {
               id="voice"
               aria-describedby="voice-hint"
               value={profile.voiceSample}
-              onChange={(e) => updateProfile((p) => (p.voiceSample = cleanHidden(e.target.value).text))}
+              onChange={(e) =>
+                updateProfile((p) => {
+                  p.voiceSample = cleanHidden(e.target.value).text;
+                  p.version += 1;
+                })
+              }
             />
           </div>
         </Disclosure>
@@ -268,8 +301,10 @@ export function DetailsScreen({ mode }: { mode: "onboarding" | "profile" }) {
                   className="btn danger"
                   onClick={async () => {
                     await deleteProfile();
+                    setResumeUndo(null);
                     setProfile(null);
-                    window.location.reload();
+                    announce("Your resume and details were deleted.");
+                    go("resume");
                   }}
                 >
                   Delete them
