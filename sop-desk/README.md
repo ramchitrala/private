@@ -25,7 +25,7 @@ To try the whole app without an API key or spending credits:
 MOCK_ANTHROPIC=1 APP_PASSCODE=anything npm run dev
 ```
 
-In mock mode every stage answers from built-in fixtures (an invented applicant and invented page texts). Links containing `newhaven` give the "1-2 pages, double-spaced, 12 pt" shape, links containing `umbc` give the no-instructions fallback, links containing `fetchfail` give a failed fetch, and anything else gives question prompts with a word range.
+In test mode (`MOCK_ANTHROPIC=1`) every stage answers from built-in fixtures (an invented applicant and invented page texts), and a banner says so. Links containing `newhaven` give the "1-2 pages, double-spaced, 12 pt" shape, links containing `umbc` give the no-instructions fallback, links containing `fetchfail` give a failed fetch, and anything else gives question prompts with a word range.
 
 ## Environment variables
 
@@ -56,15 +56,23 @@ Every route has a literal `export const maxDuration = 300` (Next.js needs a lite
 
 ## How it works
 
-1. **Resume and program.** Upload a PDF or DOCX (up to 3 MB) or paste the text, and give the program link. PDFs are sent to Claude as a document; DOCX is converted to text with mammoth.
-2. **Facts.** An editable fact sheet. Facts you add are marked "from you" and treated as true.
-3. **Requirements.** The link must be on the university's own site; listing sites (Yocket, Shiksha, LeverageEdu, Reddit, blogs and so on) are refused, and for a domain the app can't classify you are asked to confirm it. One call fetches the program page and searches the official domains (enforced with `allowed_domains` on web search and web fetch). A second call, with no tools, extracts each requirement with an exact quote and source link. Every quote is checked against the fetched text; items that fail are dropped and listed. You can edit, add or remove items, and "Check again" re-runs the search.
-4. **Draft and review.** Optional questions cover what the instructions ask for that your facts don't. Then: draft, humanizer pass (the vendored `skills/humanizer/SKILL.md` is the system prompt), a deterministic lint, and the review loop. The reviewer is a separate conversation that never sees the writer's prompts. A draft passes only on `NO_CORRECTIONS` with `HIGH` confidence. A correction whose text occurs exactly once is applied by exact replacement; otherwise the writer makes that one change.
-5. **Download.** Both files are built in the browser from the same document model.
+The app asks one thing per screen, with one main button, a "Step N of M" line and a Back link. Your resume is kept in the browser, so it is only asked for once.
 
-After that, "Ask for a change" makes the smallest edit, applies the humanizer rules to the edited paragraphs, and continues the review (3 rounds per edit). "Retry" writes a fresh draft from the same inputs. Every output is saved as a version you can compare and restore.
+**First visit (6 steps)**
+1. **Start with your resume.** Upload a PDF or Word file (up to 3 MB) or paste the text. PDFs go to Claude as a document; Word files are converted to text with mammoth. A "Using a shared computer?" option keeps the resume in memory only.
+2. **Check your details.** What was read from the resume, as plain lines in groups. Each group has Edit; you can add anything the resume leaves out and an optional writing sample. Anything you type is marked as yours and kept if the resume is read again.
+3. **Which program is this statement for?** Paste the program's link. Listing sites (Yocket, Shiksha, LeverageEdu, Reddit, blogs and so on) are refused where you type them; for a site the app can't classify it asks "Is X the university's own website?" and remembers your answer. Entry term, track, other official pages and notes are optional, under "More about this program".
+4. **What the university asks for.** One call fetches the program page and searches the official domains (enforced with `allowed_domains` on web search and web fetch). A second call, with no tools, extracts each instruction with an exact quote and source link, and every quote is checked against the fetched text. The screen shows a plain summary; "Where this came from" opens the quote and link; "Something is wrong or missing" opens the editor. If the site has no statement instructions, the screen says so and offers a paste box before using the standard layout. If the page can't be opened, you get one "Retry this step", a paste box and "Use a different link". It never falls back silently.
+5. **A few optional questions**, only when the instructions ask for something your details don't cover. Leave a box empty to skip it. Answers you keep are saved to your details for later statements.
+6. **Writing your statement**, then **Your statement is ready.** The draft, the natural-voice pass (the vendored `skills/humanizer/SKILL.md` is the system prompt), a deterministic lint and the review loop run as four plain stages with the elapsed time and Stop. The reviewer is a separate conversation that never sees the writer's prompts. A draft passes only on `NO_CORRECTIONS` with `HIGH` confidence; a correction whose text occurs exactly once is applied by exact replacement, otherwise the writer makes that one change. The result screen leads with the download in the format the school asks for (PDF when it doesn't say), then the statement, then "Want something changed?".
 
-**No silent fallback.** The default structure is used only after the program page was fetched and the searches ran and found no statement instructions. A failed fetch, a timeout or a blocked site is shown as an error with a retry button and a box to paste the instructions yourself.
+**Every later statement (4 steps)** starts at "Which program is this statement for?": the resume, details, writing sample, trusted sites and last entry term are reused.
+
+**On the result screen**, "Want something changed?" makes the smallest edit, smooths the edited paragraphs, and runs up to 3 more checks; "Undo this change" goes back. Facts you state there ("I also won the X award") are saved to your details, with Undo. "Not happy with it? Write a new version" writes a fresh draft with an optional note. "Show details" holds the evidence: what the program asks for and where it says so, length and layout, how SOP Desk checked it (the review log), earlier versions with compare and "Use this version", your change requests, what was searched, file notes and technical details (model, tokens, timings).
+
+If the program has a rule about AI use or authorship, it is shown with its quote and you tick "I've read this program's rule about writing help" before downloading.
+
+The Menu has: My statements, Your resume and details (replace the resume, edit details, delete them), Theme (match my device, light, dark), Download a backup, Restore from a backup, Sign out on this device, and Delete everything saved here.
 
 ## Files
 
@@ -78,7 +86,14 @@ The app removes hidden characters and file metadata only. It does not rewrite te
 
 ## Storage and privacy
 
-Projects (inputs, resume file, facts, research with fetched page text, drafts, versions, review logs, the reviewer conversation and the change requests) are stored in IndexedDB in your browser. The passcode and preferences are in localStorage. Clearing browser data deletes them; "Export project" saves a JSON copy and "Import project" loads one. If storage is blocked, the app works in memory and says so. The server stores nothing.
+Everything is stored in your browser's IndexedDB (database `sop-desk`, version 2):
+
+- **Profile** (one record): the resume file or text, the details read from it and where each came from, the writing sample, the last entry term and the sites you confirmed as a university's own. A new statement copies it. Changes to the profile reach statements that have no draft yet; a statement that already has a draft is never rewritten and offers "Write a new version with your new details" instead.
+- **Statements** (one per program): the program link and options, the research with fetched page text, questions and answers, drafts, versions, the review log and the reviewer conversation needed to continue it, and change requests.
+
+The passcode and preferences (theme, preview mode) are in localStorage. When you first open the new version, the profile is built from your most recent project that has details, and every older project becomes a statement; nothing is deleted.
+
+Clearing browser data deletes everything; "Download a backup" saves one JSON file with the profile and all statements, and "Restore from a backup" reads it (older single-project exports work too). If storage is blocked, the app works in memory and says so. The server stores nothing.
 
 Fetched web pages are treated as data: prompts wrap them in tagged blocks and tell the model to ignore instructions inside them, and pages off the official domains are discarded in code as well.
 
@@ -91,7 +106,7 @@ npm run build
 npm run smoke     # live run on three programs; needs ANTHROPIC_API_KEY and spends credits
 ```
 
-`npm run e2e` starts its own dev server on port 3210 and writes screenshots of every step at 1440 px and 390 px, in both themes, to `e2e/screenshots/`. It also checks that nothing scrolls horizontally and that keyboard focus follows reading order.
+`npm run e2e` starts its own dev server on port 3210 and walks a first visit and a second statement at 1440 px and 390 px in both themes, plus 360 px, the no-instructions and page-failed cases, Stop and Continue, the passcode, keyboard focus and theme. It writes screenshots of every screen to `e2e/screenshots/`, and on each screen checks that nothing scrolls sideways and that no technical words appear outside "Show details".
 
 `npm run smoke` writes its files to `smoke-output/`. Links (b) and (c) are best guesses; set `SMOKE_URL_B` and `SMOKE_URL_C` if they have moved.
 
