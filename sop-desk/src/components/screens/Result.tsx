@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { diffArrays } from "diff";
 import type { CorrectionOutcome, FactItem, Version } from "@/lib/types";
-import { checklist, fileBaseName, sectionLimits } from "@/lib/requirements";
+import { checklist, fileBaseName, sectionLimits, spacingLabel } from "@/lib/requirements";
 import { bodyToText, bodyWords, sectionWords } from "@/lib/docmodel";
 import { lintDoc, lintIssueCount } from "@/lib/lint";
 import { diffText } from "@/lib/diff";
@@ -413,7 +413,7 @@ export function ResultScreen() {
         <>
           <p className="hint">
             {pages} page{pages === 1 ? "" : "s"}, {fmt.page === "a4" ? "A4" : "US Letter"}, {fmt.sizePt} pt,{" "}
-            {fmt.lineMultiple >= 2 ? "double spaced" : fmt.lineMultiple >= 1.5 ? "1.5 spaced" : "single spaced"}
+            {spacingLabel(fmt)}
           </p>
           <PageView pdf={built.pdf} />
         </>
@@ -593,7 +593,7 @@ export function ResultScreen() {
               </dd>
               <dt>Layout</dt>
               <dd>
-                {fmt.docxFont}, {fmt.sizePt} pt, {fmt.lineMultiple >= 2 ? "double" : fmt.lineMultiple >= 1.5 ? "1.5" : "single"} spaced, {fmt.marginIn}-inch margins
+                {fmt.docxFont}, {fmt.sizePt} pt, {spacingLabel(fmt)}, {fmt.marginIn}-inch margins
               </dd>
               <dt>Writing-style checks</dt>
               <dd>

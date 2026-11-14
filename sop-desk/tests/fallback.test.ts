@@ -68,8 +68,28 @@ describe("format rules", () => {
   };
   it("uses the default look when there are no official instructions", () => {
     const f = resolveFormat(research(EMPTY));
-    expect(f).toMatchObject({ shape: "sections", page: "letter", marginIn: 1, sizePt: 11, font: "sans", docxFont: "Arial", titlePt: 22, headingPt: 13, paraAfterPt: 11, wordMin: 900, wordMax: 1200, pageMax: 0 });
-    expect(f.lineMultiple * 1.15).toBeCloseTo(1.33, 2);
+    // The owner's "Default SOP format".
+    expect(f).toMatchObject({
+      shape: "sections",
+      page: "letter",
+      marginIn: 1,
+      sizePt: 11,
+      font: "sans",
+      docxFont: "Arial",
+      lineExactPt: 14.6,
+      paraAfterPt: 11,
+      firstLineIndentIn: 0,
+      titlePt: 23,
+      titleBeforePt: 14,
+      titleAfterPt: 16,
+      headerLinePt: 14.6,
+      headingPt: 13,
+      headingBeforePt: 15,
+      headingAfterPt: 10,
+      wordMin: 1100,
+      wordMax: 1300,
+      pageMax: 0,
+    });
   });
   it("official formatting wins: 1-2 pages, double-spaced, 12 point", () => {
     const s = { sourceUrl: PROGRAM.url, level: "program" };
@@ -83,7 +103,7 @@ describe("format rules", () => {
         ],
       }),
     );
-    expect(f).toMatchObject({ shape: "essay", sizePt: 12, lineMultiple: 2, pageMax: 2, firstLineIndentIn: 0.5, paraAfterPt: 0, locked: { size: true, spacing: true, margins: false } });
+    expect(f).toMatchObject({ shape: "essay", sizePt: 12, lineMultiple: 2, lineExactPt: 0, pageMax: 2, firstLineIndentIn: 0.5, paraAfterPt: 0, locked: { size: true, spacing: true, margins: false } });
   });
   it("uses A4 outside the US", () => {
     const r = research(EMPTY);

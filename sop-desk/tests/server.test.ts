@@ -75,6 +75,15 @@ describe("access protection", () => {
       }
     }
   });
+  it("also accepts the passcode as a bearer token, and nothing else", async () => {
+    const { POST } = await routes["/api/auth"]();
+    const call = (headers: Record<string, string>) => POST(new Request("http://localhost/api/auth", { method: "POST", headers })).then((r) => r.status);
+    expect(await call({ authorization: `Bearer ${PASS}` })).toBe(200);
+    expect(await call({ authorization: "Bearer wrong" })).toBe(401);
+    expect(await call({ authorization: "Bearer " })).toBe(401);
+    expect(await call({ authorization: PASS + "x" })).toBe(401);
+  });
+
   it("rejects everything when APP_PASSCODE is not set", async () => {
     process.env.APP_PASSCODE = "";
     expect((await post("/api/auth", {}, "")).status).toBe(401);

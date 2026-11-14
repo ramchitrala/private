@@ -35,7 +35,10 @@ export async function scrubDocx(input: Uint8Array | ArrayBuffer | string): Promi
 export async function buildDocx(doc: DocModel, format: DocFormat): Promise<Uint8Array> {
   const half = (pt: number) => Math.round(pt * 2);
   const tw = (pt: number) => Math.round(pt * 20);
-  const line = Math.round(format.lineMultiple * 240);
+  // Exactly N pt (as the default format asks) or a multiple of single spacing (as a school's "double-spaced" asks).
+  const body = format.lineExactPt
+    ? { line: Math.round(format.lineExactPt * 20), lineRule: LineRuleType.EXACT }
+    : { line: Math.round(format.lineMultiple * 240), lineRule: LineRuleType.AUTO };
   const font = format.docxFont;
   const run = (text: string, sizePt: number, bold = false) => new TextRun({ text, bold, size: half(sizePt), font });
   const children: Paragraph[] = [];
@@ -46,7 +49,7 @@ export async function buildDocx(doc: DocModel, format: DocFormat): Promise<Uint8
         children: [run(doc.title, format.titlePt, true)],
         alignment: AlignmentType.LEFT,
         keepNext: true,
-        spacing: { after: tw(format.sizePt * 0.6), line: 300, lineRule: LineRuleType.AUTO },
+        spacing: { before: tw(format.titleBeforePt), after: tw(format.titleAfterPt), line: 276, lineRule: LineRuleType.AUTO },
       }),
     );
   }
@@ -56,9 +59,11 @@ export async function buildDocx(doc: DocModel, format: DocFormat): Promise<Uint8
         children: h.label ? [run(`${h.label}: `, format.sizePt, true), run(h.value, format.sizePt)] : [run(h.value, format.sizePt, true)],
         keepNext: true,
         spacing: {
-          after: i === doc.header.length - 1 ? tw(format.sizePt * 1.2) : 0,
-          line: Math.round(Math.min(format.lineMultiple, 1.2) * 240),
-          lineRule: LineRuleType.AUTO,
+          before: 0,
+          after: i === doc.header.length - 1 ? tw(format.headingBeforePt) : 0,
+          ...(format.headerLinePt
+            ? { line: Math.round(format.headerLinePt * 20), lineRule: LineRuleType.EXACT }
+            : { line: Math.round(Math.min(format.lineMultiple, 1.2) * 240), lineRule: LineRuleType.AUTO }),
         },
       }),
     );
@@ -71,10 +76,9 @@ export async function buildDocx(doc: DocModel, format: DocFormat): Promise<Uint8
           keepNext: true,
           keepLines: true,
           spacing: {
-            before: tw(format.sizePt * 0.55),
-            after: format.locked.spacing ? 0 : tw(format.sizePt * 0.45),
-            line: format.locked.spacing ? line : 300,
-            lineRule: LineRuleType.AUTO,
+            before: tw(format.headingBeforePt),
+            after: format.locked.spacing ? 0 : tw(format.headingAfterPt),
+            ...(format.locked.spacing ? body : { line: 276, lineRule: LineRuleType.AUTO }),
           },
         }),
       );
@@ -85,7 +89,7 @@ export async function buildDocx(doc: DocModel, format: DocFormat): Promise<Uint8
           children: [run(p, format.sizePt)],
           widowControl: true,
           indent: format.firstLineIndentIn ? { firstLine: Math.round(format.firstLineIndentIn * TWIPS_PER_INCH) } : undefined,
-          spacing: { after: tw(format.paraAfterPt), line, lineRule: LineRuleType.AUTO },
+          spacing: { before: 0, after: tw(format.paraAfterPt), ...body },
         }),
       );
     }

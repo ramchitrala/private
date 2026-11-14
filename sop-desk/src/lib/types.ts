@@ -165,12 +165,20 @@ export interface DocFormat {
   /** Font name written into the .docx. */
   docxFont: string;
   sizePt: number;
-  /** Word-style line spacing multiple: 1 = single, 2 = double. */
+  /** Word-style line spacing multiple: 1 = single, 2 = double. Used when lineExactPt is 0. */
   lineMultiple: number;
+  /** Fixed line spacing in points ("Exactly" in Word), or 0 to use lineMultiple. */
+  lineExactPt: number;
   paraAfterPt: number;
   firstLineIndentIn: number;
   titlePt: number;
+  titleBeforePt: number;
+  titleAfterPt: number;
+  /** Line spacing of the header block (name, program, university...). */
+  headerLinePt: number;
   headingPt: number;
+  headingBeforePt: number;
+  headingAfterPt: number;
   wordMin: number;
   wordMax: number;
   pageMax: number;

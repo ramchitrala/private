@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { DocFormat, DocModel } from "@/lib/types";
-import { SINGLE_LINE_FACTOR } from "@/lib/requirements";
+import { SINGLE_LINE_FACTOR, bodyLinePt } from "@/lib/requirements";
 import { changedWords } from "@/lib/diff";
 
 // The statement as it will print: "Easy to read" is real text in the document's own fonts,
@@ -86,7 +86,7 @@ const FAMILY: Record<DocFormat["font"], string> = {
 
 /** Text view: the document's own type, with the words changed by the last edit marked. */
 export function TextView({ doc, prev, format }: { doc: DocModel; prev: DocModel | null; format: DocFormat }) {
-  const line = SINGLE_LINE_FACTOR * format.lineMultiple;
+  const line = `${bodyLinePt(format)}pt`;
   const para = (text: string, si: number, pi: number) => {
     const before = prev?.sections[si]?.paragraphs[pi];
     if (!prev || before === text) return text;
@@ -111,10 +111,13 @@ export function TextView({ doc, prev, format }: { doc: DocModel; prev: DocModel 
   return (
     <div className="pages">
       <article className="sheet" data-testid="textview" style={{ fontFamily: FAMILY[format.font], fontSize: `${format.sizePt}pt`, lineHeight: line }}>
-        <h2 className="doc-title" style={{ fontSize: `${format.titlePt}pt` }}>
+        <h2 className="doc-title" style={{ fontSize: `${format.titlePt}pt`, margin: `${format.titleBeforePt}pt 0 ${format.titleAfterPt}pt` }}>
           {doc.title}
         </h2>
-        <div className="doc-header" style={{ lineHeight: SINGLE_LINE_FACTOR * Math.min(format.lineMultiple, 1.2) }}>
+        <div
+          className="doc-header"
+          style={{ lineHeight: format.headerLinePt ? `${format.headerLinePt}pt` : SINGLE_LINE_FACTOR * Math.min(format.lineMultiple, 1.2), marginBottom: `${format.headingBeforePt}pt` }}
+        >
           {doc.header.map((h, i) => (
             <p key={i}>{h.label ? <><strong>{h.label}:</strong> {h.value}</> : <strong>{h.value}</strong>}</p>
           ))}
@@ -122,7 +125,7 @@ export function TextView({ doc, prev, format }: { doc: DocModel; prev: DocModel 
         {doc.sections.map((s, si) => (
           <section key={si}>
             {s.heading && (
-              <h3 className="doc-heading" style={{ fontSize: `${format.headingPt}pt` }}>
+              <h3 className="doc-heading" style={{ fontSize: `${format.headingPt}pt`, margin: `${format.headingBeforePt}pt 0 ${format.headingAfterPt}pt` }}>
                 {s.heading}
               </h3>
             )}

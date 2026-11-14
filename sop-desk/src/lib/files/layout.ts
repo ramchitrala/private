@@ -1,5 +1,5 @@
 import type { DocFormat, DocModel } from "../types";
-import { SINGLE_LINE_FACTOR } from "../requirements";
+import { SINGLE_LINE_FACTOR, bodyLinePt } from "../requirements";
 
 /**
  * A small layout engine shared by the PDF builder and the page count check.
@@ -83,7 +83,7 @@ function wrap(runs: Run[], sizePt: number, width: number, firstIndent: number, m
 }
 
 function buildBlocks(doc: DocModel, f: DocFormat, width: number, measure: Measure): Block[] {
-  const bodyLine = f.sizePt * SINGLE_LINE_FACTOR * f.lineMultiple;
+  const bodyLine = bodyLinePt(f);
   const blocks: Block[] = [];
   const push = (b: Partial<Block> & Pick<Block, "kind" | "lines" | "sizePt">) =>
     blocks.push({ lineHeight: bodyLine, before: 0, after: 0, indentFirst: 0, keepWithNext: false, sectionIndex: -1, ...b });
@@ -93,8 +93,9 @@ function buildBlocks(doc: DocModel, f: DocFormat, width: number, measure: Measur
       kind: "title",
       lines: wrap([{ text: doc.title, style: "bold" }], f.titlePt, width, 0, measure),
       sizePt: f.titlePt,
-      lineHeight: f.titlePt * 1.25,
-      after: f.sizePt * 0.6,
+      lineHeight: f.titlePt * 1.2,
+      before: f.titleBeforePt,
+      after: f.titleAfterPt,
       keepWithNext: true,
     });
   }
@@ -106,8 +107,8 @@ function buildBlocks(doc: DocModel, f: DocFormat, width: number, measure: Measur
       kind: "header",
       lines: wrap(runs, f.sizePt, width, 0, measure),
       sizePt: f.sizePt,
-      lineHeight: f.sizePt * SINGLE_LINE_FACTOR * Math.min(f.lineMultiple, 1.2),
-      after: i === doc.header.length - 1 ? f.sizePt * 1.2 : 0,
+      lineHeight: f.headerLinePt || f.sizePt * SINGLE_LINE_FACTOR * Math.min(f.lineMultiple, 1.2),
+      after: i === doc.header.length - 1 ? f.headingBeforePt : 0,
       keepWithNext: true,
     });
   });
@@ -117,9 +118,9 @@ function buildBlocks(doc: DocModel, f: DocFormat, width: number, measure: Measur
         kind: "heading",
         lines: wrap([{ text: s.heading, style: "bold" }], f.headingPt, width, 0, measure),
         sizePt: f.headingPt,
-        lineHeight: Math.max(f.headingPt * 1.3, f.locked.spacing ? bodyLine : 0),
-        before: f.sizePt * 0.55,
-        after: f.locked.spacing ? 0 : f.sizePt * 0.45,
+        lineHeight: Math.max(f.headingPt * 1.25, f.locked.spacing ? bodyLine : 0),
+        before: f.headingBeforePt,
+        after: f.locked.spacing ? 0 : f.headingAfterPt,
         keepWithNext: true,
         sectionIndex: si,
       });
@@ -173,7 +174,8 @@ function paginate(blocks: Block[], f: DocFormat, pageHeight: number): Paged {
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     const atTop = pages[pages.length - 1].length === 0;
-    const gap = atTop ? 0 : Math.max(pendingAfter, b.before);
+    // Space above is dropped at the top of a page, except for the title, which Word also keeps.
+    const gap = atTop ? (i === 0 ? b.before : 0) : Math.max(pendingAfter, b.before);
 
     // Room needed to start this block here: its own first lines, plus, when it must
     // stay with what follows (title, header, heading), the start of the next blocks.
@@ -222,7 +224,12 @@ function tighten(f: DocFormat, level: number): DocFormat {
   if (level === 0) return f;
   const after = [1, 0.8, 0.65, 0.5][level] ?? 0.5;
   const line = f.locked.spacing ? 1 : ([1, 1, 0.985, 0.97][level] ?? 0.97);
-  return { ...f, paraAfterPt: Math.round(f.paraAfterPt * after * 100) / 100, lineMultiple: f.lineMultiple * line };
+  return {
+    ...f,
+    paraAfterPt: Math.round(f.paraAfterPt * after * 100) / 100,
+    lineMultiple: f.lineMultiple * line,
+    lineExactPt: f.lineExactPt ? Math.round(f.lineExactPt * line * 100) / 100 : 0,
+  };
 }
 
 export function layoutDoc(doc: DocModel, format: DocFormat, measure: Measure): Layout {

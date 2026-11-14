@@ -9,7 +9,7 @@ import type { DocFormat } from "@/lib/types";
 import { fonts, makeDoc, SENTENCE } from "./helpers";
 
 const base = resolveFormat(null);
-const essay: DocFormat = { ...base, shape: "essay", sizePt: 12, lineMultiple: 2, paraAfterPt: 0, firstLineIndentIn: 0.5, pageMax: 2, font: "serif", docxFont: "Times New Roman", locked: { size: true, spacing: true, margins: false } };
+const essay: DocFormat = { ...base, shape: "essay", sizePt: 12, lineMultiple: 2, lineExactPt: 0, paraAfterPt: 0, firstLineIndentIn: 0.5, pageMax: 2, font: "serif", docxFont: "Times New Roman", locked: { size: true, spacing: true, margins: false } };
 
 /** Names in the zip's central directory, read from the raw bytes. */
 function zipEntryNames(bytes: Uint8Array): string[] {
@@ -57,6 +57,33 @@ describe("DOCX metadata", () => {
     expect(xml).toMatch(/w:line="480"/); // double spacing
     expect(xml).toMatch(/w:sz w:val="24"/); // 12 pt
     expect(xml).toMatch(/w:firstLine="720"/); // 0.5 inch indent
+  });
+});
+
+describe("default format", () => {
+  it("writes the Word file with the default format's exact settings", async () => {
+    const zip = await JSZip.loadAsync(await buildDocx(makeDoc(7, 3), base));
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toContain("Arial");
+    expect(xml).toMatch(/w:line="292" w:lineRule="exact"/); // exactly 14.6 pt
+    expect(xml).toMatch(/w:after="220"/); // 11 pt after paragraphs
+    expect(xml).toMatch(/w:sz w:val="46"/); // 23 pt title
+    expect(xml).toMatch(/w:after="320" w:before="280"/); // 14 pt above, 16 pt below the title
+    expect(xml).toMatch(/w:sz w:val="26"/); // 13 pt headings
+    expect(xml).toMatch(/w:after="200" w:before="300"/); // 15 pt above, 10 pt below headings
+    expect(xml).toMatch(/w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/);
+  });
+  it("puts about 1,200 words on three pages", async () => {
+    // Seven sections with the default paragraph counts, about 1,200 words in all.
+    const counts = [1, 1, 2, 3, 1, 3, 1];
+    // Ordinary statement prose (about 4.7 letters a word).
+    const prose = SENTENCE.trim().split(/\s+/);
+    const words = (n: number) => Array.from({ length: n }, (_, i) => prose[i % prose.length]).join(" ") + ".";
+    const doc = makeDoc(7, 1, 1);
+    const perSection = [105, 165, 200, 320, 55, 260, 95];
+    doc.sections = doc.sections.map((s, i) => ({ heading: s.heading, paragraphs: Array.from({ length: counts[i] }, () => words(Math.round(perSection[i] / counts[i]))) }));
+    const pdf = await buildPdf(doc, base, fonts());
+    expect(pdf.pageCount).toBe(3);
   });
 });
 

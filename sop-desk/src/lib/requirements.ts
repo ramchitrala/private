@@ -255,6 +255,9 @@ export function resolveFormat(research: Research | null): DocFormat {
   const find = (kind: ReqKind) => items.find((i) => i.kind === kind);
   const prompts = items.filter((i) => i.kind === "prompt");
 
+  // The default look, from the owner's "Default SOP format": 11 pt Arial with lines of exactly 14.6 pt,
+  // 11 pt after each paragraph, a 23 pt title (14 pt above, 16 pt below), 13 pt headings (15 pt above,
+  // 10 pt below), 1-inch margins, about 1,200 words on three pages.
   const format: DocFormat = {
     shape: status !== "official" ? "sections" : prompts.length ? "questions" : "essay",
     page: research && !isUS(research) ? "a4" : "letter",
@@ -263,12 +266,18 @@ export function resolveFormat(research: Research | null): DocFormat {
     docxFont: "Arial",
     sizePt: 11,
     lineMultiple: DEFAULT_LINE_MULTIPLE,
+    lineExactPt: 14.6,
     paraAfterPt: 11,
     firstLineIndentIn: 0,
-    titlePt: 22,
+    titlePt: 23,
+    titleBeforePt: 14,
+    titleAfterPt: 16,
+    headerLinePt: 14.6,
     headingPt: 13,
-    wordMin: 900,
-    wordMax: 1200,
+    headingBeforePt: 15,
+    headingAfterPt: 10,
+    wordMin: 1100,
+    wordMax: 1300,
     pageMax: 0,
     locked: { size: false, spacing: false, margins: false },
   };
@@ -300,12 +309,17 @@ export function resolveFormat(research: Research | null): DocFormat {
   if (sizePt >= 8 && sizePt <= 16) {
     format.sizePt = sizePt;
     format.locked.size = true;
+    // Keep the default's proportions at the school's size.
+    format.lineExactPt = Math.round(sizePt * (14.6 / 11) * 10) / 10;
+    format.headerLinePt = format.lineExactPt;
   }
 
   const spacing = find("spacing");
   const multiple = spacing ? spacingMultiple(spacing.normalized, spacing.text) : 0;
   if (multiple) {
+    // The school's own spacing ("double-spaced") is a multiple of single spacing, not a fixed height.
     format.lineMultiple = multiple;
+    format.lineExactPt = 0;
     format.locked.spacing = true;
   }
 
@@ -318,7 +332,7 @@ export function resolveFormat(research: Research | null): DocFormat {
 
   if (format.shape === "essay") {
     // A single essay: no section headings. Double-spaced essays use first-line indents and no gaps.
-    if (format.lineMultiple >= 1.5) {
+    if (format.lineExactPt === 0 && format.lineMultiple >= 1.5) {
       format.firstLineIndentIn = 0.5;
       format.paraAfterPt = 0;
     } else {
@@ -326,8 +340,9 @@ export function resolveFormat(research: Research | null): DocFormat {
     }
     format.titlePt = Math.max(format.sizePt + 4, 16);
   } else {
-    format.paraAfterPt = format.lineMultiple >= 1.5 ? 0 : format.sizePt;
-    if (format.lineMultiple >= 1.5) format.firstLineIndentIn = 0.5;
+    const wide = format.lineExactPt === 0 && format.lineMultiple >= 1.5;
+    format.paraAfterPt = wide ? 0 : format.sizePt;
+    if (wide) format.firstLineIndentIn = 0.5;
     format.headingPt = Math.max(13, format.sizePt + 1);
   }
   return format;
@@ -440,3 +455,14 @@ export const KIND_LABEL: Record<ReqKind, string> = {
   avoid: "Avoid",
   aiPolicy: "AI or authorship policy",
 };
+
+/** Line spacing in words, for the layout summary. */
+export function spacingLabel(f: DocFormat): string {
+  if (f.lineExactPt) return `${f.lineExactPt} pt lines`;
+  return f.lineMultiple >= 2 ? "double spaced" : f.lineMultiple >= 1.5 ? "1.5 spaced" : "single spaced";
+}
+
+/** Height of one body line in points. */
+export function bodyLinePt(f: DocFormat): number {
+  return f.lineExactPt || f.sizePt * SINGLE_LINE_FACTOR * f.lineMultiple;
+}

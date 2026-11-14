@@ -1,6 +1,7 @@
 import type { DocFormat, DocModel, FactSheet, LintResult, ProgramDetail, ReqItem, SourcePage } from "../types";
 import type { EditTask, ReviewFollowUp, ReviewInputs, WritingContext } from "../api-types";
 import { humanizerSkill } from "./humanizer";
+import { bodyLinePt, spacingLabel } from "../requirements";
 
 // Prompts for every stage. Inputs are wrapped in tags and described as data, so
 // instructions written inside a resume or a web page are never followed.
@@ -113,7 +114,7 @@ function structureBrief(ctx: WritingContext): string {
       ? `Total length: at most ${f.wordMax} words${f.wordMin ? `, at least ${f.wordMin}` : ""}, counting paragraph text only. Aim for ${Math.round(f.wordMax * 0.9)} to ${f.wordMax} words and never go over.`
       : "";
   const pages = f.pageMax
-    ? `Page limit: ${f.pageMax} page${f.pageMax > 1 ? "s" : ""} at ${f.sizePt} pt with ${f.lineMultiple >= 2 ? "double" : f.lineMultiple >= 1.5 ? "1.5" : "single"} spacing and ${f.marginIn}-inch margins, including a short title and header block. That is roughly ${approxWordsForPages(f)} words; stay under it.`
+    ? `Page limit: ${f.pageMax} page${f.pageMax > 1 ? "s" : ""} at ${f.sizePt} pt with ${spacingLabel(f)} and ${f.marginIn}-inch margins, including a short title and header block. That is roughly ${approxWordsForPages(f)} words; stay under it.`
     : "";
   if (f.shape === "questions") {
     return [
@@ -135,26 +136,25 @@ function structureBrief(ctx: WritingContext): string {
       .filter(Boolean)
       .join("\n");
   }
-  const field = "<field>";
-  const uni = ctx.details.find((d) => d.kind === "university" && d.verified)?.value ?? "this university";
-  return [
-    "Structure: the default format, seven numbered sections with these headings, in this order:",
-    "1. Background and motivation",
-    "2. Academic background and technical projects",
-    "3. Professional experience",
-    `4. Why ${field}? (replace ${field} with the program's field, in lower case unless it is a proper noun)`,
-    "5. Career goals",
-    `6. Why ${uni}?`,
-    "7. Conclusion",
-    "Leave out a section only if the facts give nothing at all for it (for example no work experience), and renumber the rest.",
-    `Length: about 900 to 1,200 words of paragraph text.`,
-  ].join("\n");
+  const uni = ctx.details.find((d) => d.kind === "university" && d.verified)?.value ?? "";
+  const uniHeading = uni ? `6. Why ${/^university of|^the /i.test(uni) ? (/^the /i.test(uni) ? uni : `the ${uni}`) : uni}?` : "6. Why this university?";
+  return `Structure: the default format. The program's official pages give no statement instructions, so use exactly these seven numbered sections, in this order, with these headings in sentence case. About 1,200 words of paragraph text in all (1,100 to 1,300). "Why <field>?" and "Why <university>?" are the longest sections, together about half the statement.
+
+1. Background and motivation (one paragraph, about 90 to 120 words): the degree, university and graduation year; the courses that started the interest; the jobs since then; what led to this field.
+2. Academic background and technical projects (one paragraph, about 150 to 180 words): relevant degree courses and any outside courses in the facts; each project, what was built and what it taught; readiness to take any prerequisite courses.
+3. Professional experience (two paragraphs, about 195 to 210 words): each internship and job with its employer, role and the numbers from the facts, tied to the kind of work done in this field.
+4. Why <field>? (three paragraphs, about 280 to 350 words): replace <field> with the program's field, in lower case unless it is a proper noun, for example "4. Why cybersecurity?". Why the field matters now, using recent developments or incidents with their year; the parts of the field the applicant wants to work on; how this builds on the earlier interests. Name a development only if you are certain it happened and of its year; never invent statistics. If unsure, describe the trend without a date.
+5. Career goals (one paragraph, about 55 words): the first role after graduation, the specialization to grow into, and the long-term goal.
+${uniHeading} (two or three paragraphs, about 230 to 290 words): the program and concentration; named core courses and electives tied to the goals; labs, faculty, projects and clubs. Name only those listed in the verified program details; if few are listed, tie the program's stated focus to the goals instead.
+7. Conclusion (one paragraph, about 75 to 115 words): a short close tying the path so far, the reason for the field, and how the program leads to the first role.
+
+Leave out a section only if the facts give nothing at all for it (for example no work experience), and renumber the rest.`;
 }
 
 function approxWordsForPages(f: DocFormat): number {
   const pageHeight = (f.page === "a4" ? 841.89 : 792) - 2 * f.marginIn * 72;
   const pageWidth = (f.page === "a4" ? 595.28 : 612) - 2 * f.marginIn * 72;
-  const lines = Math.floor(pageHeight / (f.sizePt * 1.15 * f.lineMultiple));
+  const lines = Math.floor(pageHeight / bodyLinePt(f));
   const wordsPerLine = pageWidth / (f.sizePt * 0.5) / 5.6;
   return Math.round((lines * f.pageMax - 8) * wordsPerLine * 0.88);
 }
@@ -271,7 +271,7 @@ export function reviewSystem(): string {
 You are given the applicant's facts, the school's official requirements with their quotes and sources, the verified program details, the draft as it was before a style pass, the current text, automated lint results, and the word and page counts.
 
 Check in this order:
-1. Every claim against the facts. Any number, date, title, employer, award, tool, course or outcome that the facts do not support is a MUST_FIX. Facts marked as coming from the applicant directly are true.
+1. Every claim against the facts. Any number, date, title, employer, award, tool, course or outcome that the facts do not support is a MUST_FIX. Facts marked as coming from the applicant directly are true. Statements about the field itself (a recent development or incident and its year) must be real and correctly dated; if you are not certain, ask for the claim to be removed or made general (MUST_FIX).
 2. Every official requirement: each prompt answered in the school's order, total and per-prompt limits (use the counts you are given; they are measured, do not recount), the formatting the text controls, and the document's name.
 3. Program details against the verified program details. A course, lab, center, faculty area or feature that is not in the verified list is a MUST_FIX.
 4. Claims weakened or lost between the earlier draft and the current text. If a supported claim was dropped, softened or made vaguer, restore it.
@@ -304,7 +304,7 @@ function lintBlock(lint: LintResult, pageCount: number, format: DocFormat): stri
 Words (paragraph text): ${lint.wordCount}${format.wordMax ? ` (limit ${format.wordMin ? `${format.wordMin} to ` : ""}${format.wordMax})` : ""}
 ${per.join("\n")}
 Pages in the built PDF: ${pageCount}${format.pageMax ? ` (limit ${format.pageMax})` : ""}
-Layout: ${format.sizePt} pt, line spacing x${format.lineMultiple.toFixed(2)}, ${format.marginIn}-inch margins, ${format.page === "a4" ? "A4" : "US Letter"}
+Layout: ${format.sizePt} pt, ${spacingLabel(format)}, ${format.marginIn}-inch margins, ${format.page === "a4" ? "A4" : "US Letter"}
 </measurements>
 
 <lint note="deterministic counts">
