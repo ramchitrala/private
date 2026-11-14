@@ -20,6 +20,11 @@ export interface PlacedLine {
   y: number;
   sizePt: number;
   runs: Run[];
+  /** What the line belongs to, for layout checks: block kind, block number, line number and line count. */
+  kind: "title" | "header" | "heading" | "para";
+  block: number;
+  line: number;
+  of: number;
 }
 
 export interface Layout {
@@ -156,10 +161,10 @@ function paginate(blocks: Block[], f: DocFormat, pageHeight: number): Paged {
     pendingAfter = 0;
     lastFirst = { section: b.sectionIndex, heading: b.kind === "heading" };
   };
-  const place = (b: Block, line: Run[], isFirstLine: boolean) => {
+  const place = (b: Block, line: Run[], isFirstLine: boolean, block: number, lineNo: number) => {
     // Baseline sits about 80% of the way down the line box.
     const baseline = y + (b.lineHeight - b.sizePt * SINGLE_LINE_FACTOR) / 2 + b.sizePt * 0.92;
-    pages[pages.length - 1].push({ x: margin + (isFirstLine ? b.indentFirst : 0), y: baseline, sizePt: b.sizePt, runs: line });
+    pages[pages.length - 1].push({ x: margin + (isFirstLine ? b.indentFirst : 0), y: baseline, sizePt: b.sizePt, runs: line, kind: b.kind, block, line: lineNo, of: b.lines.length });
     y += b.lineHeight;
   };
   /** Lines of the block that must stay with the start of the block (no widows or orphans). */
@@ -191,7 +196,7 @@ function paginate(blocks: Block[], f: DocFormat, pageHeight: number): Paged {
       const remaining = b.lines.length - idx;
       const fit = Math.floor((bottom - y + 0.01) / b.lineHeight);
       if (fit >= remaining) {
-        for (; idx < b.lines.length; idx++) place(b, b.lines[idx], idx === 0);
+        for (; idx < b.lines.length; idx++) place(b, b.lines[idx], idx === 0, i, idx);
         break;
       }
       // Split: keep at least two lines on each side.
@@ -199,7 +204,7 @@ function paginate(blocks: Block[], f: DocFormat, pageHeight: number): Paged {
       if (b.kind !== "para" || take < 2) take = 0;
       const pageEmpty = pages[pages.length - 1].length === 0;
       if (take === 0 && pageEmpty) take = Math.max(1, Math.min(fit, remaining)); // taller than a page: must make progress
-      for (let k = 0; k < take; k++, idx++) place(b, b.lines[idx], idx === 0);
+      for (let k = 0; k < take; k++, idx++) place(b, b.lines[idx], idx === 0, i, idx);
       if (idx < b.lines.length) newPage(b);
     }
     pendingAfter = b.after;

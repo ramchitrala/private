@@ -416,3 +416,26 @@ export function checklist(research: Research | null, doc: DocModel | null, forma
       }
     });
 }
+
+/** After the user edits the requirements by hand: recompute the status and its plain line. */
+export function refreshStatus(research: Research): void {
+  const hasInstructions = research.items.some((i) => i.verified && INSTRUCTION_KINDS.includes(i.kind));
+  research.status = hasInstructions ? "official" : research.details.some((d) => d.verified) ? "program-only" : "none";
+  research.statusLine = statusLine(research.status, research.domains, research.items);
+}
+
+export const KIND_LABEL: Record<ReqKind, string> = {
+  docType: "Document name",
+  prompt: "Prompt",
+  wordLimit: "Word limit",
+  pageLimit: "Page limit",
+  font: "Font",
+  fontSize: "Font size",
+  spacing: "Line spacing",
+  margins: "Margins",
+  fileType: "File type",
+  formatOther: "Formatting",
+  topic: "Topic to cover",
+  avoid: "Avoid",
+  aiPolicy: "AI or authorship policy",
+};

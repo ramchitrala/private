@@ -7,7 +7,7 @@ import { countWords } from "../docmodel";
 // and the tests run without API credits. The applicant ("Maya Okafor"), her employers
 // and the page texts are invented. They are fixtures, not statements about any real program.
 
-export async function mockDelay(ctx: StageCtx, usage: Partial<Usage> = {}, ms = 350): Promise<void> {
+export async function mockDelay(ctx: StageCtx, usage: Partial<Usage> = {}, ms = process.env.VITEST ? 0 : 350): Promise<void> {
   ctx.emit({ type: "status", message: "Mock mode: answering from fixtures" });
   await new Promise((r) => setTimeout(r, ms));
   Object.assign(ctx.usage, { inputTokens: 1200, outputTokens: 800, stopReason: "end_turn", ...usage });
@@ -80,7 +80,7 @@ const PROGRAM_TEXT: Record<Exclude<Variant, "fetch-fail">, string> = {
 };
 
 const INSTRUCTION_TEXT: Record<"questions" | "essay", string> = {
-  questions: `[Fixture page] Application requirements. Statement of Purpose: answer each of the following questions. The complete statement should be 500 to 700 words in total. Question 1: What excites you about information systems? Question 2: Describe a project or experience that prepared you for graduate study. Question 3: What are your career goals after the program? Do not restate your resume. Upload the statement as a PDF.`,
+  questions: `[Fixture page] Application requirements. Statement of Purpose: answer each of the following questions. The complete statement should be 400 to 500 words in total. Question 1: What excites you about information systems? Question 2: Describe a project or experience that prepared you for graduate study. Question 3: What are your career goals after the program? Do not restate your resume. Upload the statement as a PDF.`,
   essay: `[Fixture page] How to apply. Personal Statement: tell us about your academic and professional background and your goals in cybersecurity. The statement should be approximately 1-2 pages, double-spaced, in 12 point font. Statements must be the applicant's own work.`,
 };
 
@@ -144,7 +144,7 @@ export function mockExtract(pages: SourcePage[]): RawExtract {
   if (qi) {
     const s = { sourceUrl: qi.url, level: "program" };
     out.docType.push({ value: "Statement of Purpose", quote: "Statement of Purpose: answer each of the following questions.", ...s });
-    out.wordLimit.push({ text: "500 to 700 words in total", min: 500, max: 700, quote: "The complete statement should be 500 to 700 words in total.", ...s });
+    out.wordLimit.push({ text: "400 to 500 words in total", min: 400, max: 500, quote: "The complete statement should be 400 to 500 words in total.", ...s });
     out.prompts.push({ text: "What excites you about information systems?", wordMin: 0, wordMax: 0, quote: "Question 1: What excites you about information systems?", ...s });
     out.prompts.push({ text: "Describe a project or experience that prepared you for graduate study.", wordMin: 0, wordMax: 0, quote: "Question 2: Describe a project or experience that prepared you for graduate study.", ...s });
     out.prompts.push({ text: "What are your career goals after the program?", wordMin: 0, wordMax: 0, quote: "Question 3: What are your career goals after the program?", ...s });

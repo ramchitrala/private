@@ -1,0 +1,27 @@
+Maya Okafor
+maya.okafor@example.com | Columbus, OH
+
+EDUCATION
+B.S. in Information Technology, Northfield College, Aug 2018 - May 2022. GPA 3.7/4.0. Dean's List, six semesters.
+
+EXPERIENCE
+Data Analyst, Harborline Credit Union, Jun 2022 - Present
+- Built SQL and Python reports on loan delinquency used by a team of four analysts.
+- Automated the monthly member-churn report, cutting preparation time from three days to four hours.
+- Wrote data quality checks for the core banking export; flagged 2,300 duplicate member records in 2023.
+
+IT Intern, Northfield College Library, May 2021 - Aug 2021
+- Migrated the equipment-loan records from spreadsheets to a PostgreSQL database.
+
+PROJECTS
+Transit delay dashboard (2021): cleaned 1.2 million rows of public bus arrival data and built a Tableau dashboard of delays by route.
+Capstone (2022): designed a help-desk ticket router with a team of three; it sorted tickets by keyword with 84% accuracy on a test set of 500 tickets.
+
+SKILLS
+SQL, Python (pandas), Tableau, PostgreSQL, Excel, Git
+
+CERTIFICATIONS
+CompTIA Security+ (2023)
+
+AWARDS
+Northfield College Capstone Prize, 2022

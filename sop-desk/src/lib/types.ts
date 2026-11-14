@@ -280,6 +280,8 @@ export interface Project {
   updatedAt: string;
   inputs: ProjectInputs;
   facts: FactSheet | null;
+  /** Result of the gather call, kept so the extract step can be retried on its own. */
+  gathered: { programUrl: string; gather: GatherResult; domains: string[] } | null;
   research: Research | null;
   questions: Question[] | null;
   /** The draft before the humanizer pass, kept for the reviewer. */
@@ -295,6 +297,10 @@ export interface Project {
   currentVersionId: string;
   chat: ChatMessage[];
   runs: RunDetail[];
+  /** What the next review message should report about the previous round. */
+  pending: { applied: string[]; declined: { id: string; reason: string }[]; failed: { id: string; reason: string }[] } | null;
+  /** Domains the user confirmed as the university's own. */
+  confirmedDomains: string[];
 }
 
 /** Events sent over the NDJSON stream from every stage route. */
