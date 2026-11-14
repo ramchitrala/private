@@ -101,6 +101,24 @@ Clearing browser data deletes everything; "Download a backup" saves one JSON fil
 
 Fetched web pages are treated as data: prompts wrap them in tagged blocks and tell the model to ignore instructions inside them, and pages off the official domains are discarded in code as well.
 
+## Default format
+
+Used only when the program's official pages give neither format rules (length, font, spacing, margins) nor anything about what the statement should cover. A file type, a document name or an AI-use rule alone does not count as instructions. A school's own questions, limits or formatting always come first.
+
+- **Structure:** the title "Statement of Purpose", a header block (name in bold; Program, Concentration only if there is one, University, School only when relevant, Entry Term, each label in bold), then seven numbered sections in sentence case:
+  1. Background and motivation (one paragraph, about 90 to 120 words)
+  2. Academic background and technical projects (one paragraph, about 150 to 180)
+  3. Professional experience (two paragraphs, about 195 to 210)
+  4. Why [field]? (three paragraphs, about 280 to 350)
+  5. Career goals (one paragraph, about 55)
+  6. Why [university]? (two or three paragraphs, about 230 to 290), for example "6. Why the University of New Haven?"
+  7. Conclusion (one paragraph, about 75 to 115)
+
+  About 1,200 words in all; "Why [field]?" and "Why [university]?" together are about half. Course, lab and faculty names come only from the university's own pages; dated developments in the field are kept only when they are certain.
+- **Page:** US Letter (A4 outside the US), 1-inch margins, 11 pt Arial (Liberation Sans in the PDF), lines of exactly 14.6 pt, 11 pt after each paragraph, no first-line indent. Title 23 pt bold with 14 pt above and 16 pt below; header lines 14.6 pt with no space between; section headings 13 pt bold with 15 pt above and 10 pt below, kept with the next paragraph. About 1,200 words fill three pages.
+
+The same title, header block and page settings are used when a school gives questions but no formatting rules.
+
 ## Tests
 
 ```bash
@@ -108,7 +126,10 @@ npm test          # vitest: unit tests plus the whole pipeline in mock mode
 npm run e2e       # Playwright against the dev server in mock mode
 npm run build
 npm run smoke     # live run on three programs; needs ANTHROPIC_API_KEY and spends credits
+SOP_DESK_URL=https://sop-desk.vercel.app SOP_DESK_PASSCODE=... npm run smoke:remote -- a   # live run through a deployment
 ```
+
+`smoke:remote` runs the same browser-side pipeline against a deployed app over HTTPS (so the deployment's own key is used) and writes the files, the text and a log to `smoke-output/`. The API routes accept the passcode in `x-app-passcode` or as `Authorization: Bearer <passcode>`.
 
 `npm run e2e` starts its own dev server on port 3210 and walks a first visit and a second statement at 1440 px and 390 px in both themes, plus 360 px, the no-instructions and page-failed cases, Stop and Continue, the passcode, keyboard focus and theme. It writes screenshots of every screen to `e2e/screenshots/`, and on each screen checks that nothing scrolls sideways and that no technical words appear outside "Show details".
 

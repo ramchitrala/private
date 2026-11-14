@@ -58,6 +58,12 @@ async function main() {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.startsWith("/fonts/")) return new Response(fs.readFileSync(path.join(ROOT, "public", url)));
+    if (url.startsWith(BASE) && !process.env.SOP_DESK_PASSCODE) {
+      // Behind a credential-injecting proxy: send a placeholder bearer token that the proxy replaces.
+      const headers = new Headers(init?.headers);
+      headers.set("authorization", "Bearer proxy-injected");
+      return fetchLocal(input, { ...init, headers });
+    }
     return fetchLocal(input, init);
   }) as typeof fetch;
 
