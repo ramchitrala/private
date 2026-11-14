@@ -1,0 +1,55 @@
+/**
+ * Model settings for every stage, in one place.
+ *
+ * Claude Opus 5.5 always thinks adaptively, so no `thinking` field is sent and depth is
+ * set with `output_config.effort` only. No sampling parameters, no prefill, no forced
+ * tool choice. `max_tokens` covers thinking plus text.
+ */
+
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
+
+function effort(name: string, fallback: Effort): Effort {
+  const v = (process.env[name] ?? "").trim().toLowerCase() as Effort;
+  return EFFORTS.includes(v) ? v : fallback;
+}
+
+function int(name: string, fallback: number, min: number, max: number): number {
+  const v = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
+}
+
+export function getConfig() {
+  return {
+    model: (process.env.MODEL_ID ?? "").trim() || "claude-opus-5-5",
+    effort: {
+      /** Draft, humanize, apply edits. */
+      write: effort("EFFORT_WRITE", "xhigh"),
+      /** Review (critique loop). */
+      critique: effort("EFFORT_CRITIQUE", "max"),
+      /** Resume facts, official-requirements research, questions. */
+      research: effort("EFFORT_RESEARCH", "high"),
+    },
+    maxReviewRounds: int("MAX_REVIEW_ROUNDS", 5, 1, 12),
+    /** Rounds allowed after each "Ask for a change" request. */
+    maxEditReviewRounds: 3,
+    maxTokens: 64000,
+    /** How many times a paused server-tool turn is continued before giving up. */
+    maxContinuations: 4,
+    /** SDK retries for 429, 529 and other retryable errors. */
+    maxRetries: 4,
+    tools: {
+      // Basic versions: Claude calls them directly, so every fetched page comes back
+      // in full in the response and its text can be checked against quotes.
+      webSearch: "web_search_20250305" as const,
+      webFetch: "web_fetch_20250910" as const,
+      searchMaxUses: 8,
+      fetchMaxUses: 10,
+      fetchMaxContentTokens: 30000,
+    },
+  };
+}
+
+export function isMock(): boolean {
+  return process.env.MOCK_ANTHROPIC === "1";
+}
