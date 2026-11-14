@@ -115,7 +115,7 @@ describe("request rules for Claude Opus 5.5", () => {
     expect(code).not.toMatch(/content\[0\]/);
     expect(code).toContain('"claude-opus-5-5"');
     expect(code).toMatch(/write: effort\("EFFORT_WRITE", "xhigh"\)/);
-    expect(code).toMatch(/critique: effort\("EFFORT_CRITIQUE", "max"\)/);
+    expect(code).toMatch(/critique: effort\("EFFORT_CRITIQUE", timeLimitMs > 0 && timeLimitMs <= 300_000 \? "xhigh" : "max"\)/);
     expect(code).toMatch(/research: effort\("EFFORT_RESEARCH", "high"\)/);
     expect(code).toMatch(/maxTokens: 64000/);
   });

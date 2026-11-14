@@ -26,13 +26,17 @@ function int(name: string, fallback: number, min: number, max: number): number {
 }
 
 export function getConfig() {
+  const timeLimitMs = int("STAGE_TIME_LIMIT_S", process.env.VERCEL ? 300 : 0, 0, 800) * 1000;
   return {
     model: (process.env.MODEL_ID ?? "").trim() || "claude-opus-5-5",
     effort: {
       /** Draft, humanize, apply edits. */
       write: effort("EFFORT_WRITE", "xhigh"),
-      /** Review (critique loop). */
-      critique: effort("EFFORT_CRITIQUE", "max"),
+      /**
+       * Review (critique loop). In live runs a first review at "max" always needed more than the
+       * 300 s Hobby limit, so with that limit the default is "xhigh"; "max" where steps may run longer.
+       */
+      critique: effort("EFFORT_CRITIQUE", timeLimitMs > 0 && timeLimitMs <= 300_000 ? "xhigh" : "max"),
       /** Resume facts, official-requirements research, questions. */
       research: effort("EFFORT_RESEARCH", "high"),
     },
@@ -41,7 +45,7 @@ export function getConfig() {
      * How long one step may run, in ms (the route's maxDuration). On Vercel it defaults to 300 s, the
      * Hobby limit; set STAGE_TIME_LIMIT_S=800 on Pro. A step stops cleanly 20 s before the limit.
      */
-    timeLimitMs: int("STAGE_TIME_LIMIT_S", process.env.VERCEL ? 300 : 0, 0, 800) * 1000,
+    timeLimitMs,
     /** Rounds allowed after each "Ask for a change" request. */
     maxEditReviewRounds: 3,
     maxTokens: 64000,

@@ -109,7 +109,12 @@ export interface Verified {
 export function verifyAll(items: ReqItem[], details: ProgramDetail[], pages: SourcePage[]): Verified {
   const dropped: Research["dropped"] = [];
   const keptItems: ReqItem[] = [];
+  const seen = new Set<string>();
   for (const item of items) {
+    // The same instruction found twice (often on two pages) is listed once.
+    const key = `${item.kind}|${item.text.trim().toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     const check = verifyQuote(item.quote, item.sourceUrl, pages);
     if (check.verified) keptItems.push({ ...item, verified: true, sourceUrl: check.sourceUrl });
     else dropped.push({ text: item.text, quote: item.quote, reason: check.reason });

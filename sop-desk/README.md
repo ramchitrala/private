@@ -35,7 +35,8 @@ In test mode (`MOCK_ANTHROPIC=1`) every stage answers from built-in fixtures (an
 | `APP_PASSCODE` | yes | | Every `/api/*` route compares the `x-app-passcode` header to this in constant time and answers 401 otherwise. If it is unset, every request is refused. |
 | `MODEL_ID` | no | `claude-opus-5-5` | Model for all stages. |
 | `EFFORT_WRITE` | no | `xhigh` | Draft, humanize, apply edits. |
-| `EFFORT_CRITIQUE` | no | `max` | Review loop. |
+| `EFFORT_CRITIQUE` | no | `max` (`xhigh` when `STAGE_TIME_LIMIT_S` is 300 or less) | Review loop. In live runs a first review at `max` always needed more than 300 s. |
+| `STAGE_TIME_LIMIT_S` | no | `300` on Vercel, none locally | How long one step may run. Steps stop cleanly 20 s before it and are retried one effort level lower. Set `800` on the Pro plan (and raise `maxDuration` in each route). |
 | `EFFORT_RESEARCH` | no | `high` | Resume facts, requirements research, applicant questions. |
 | `MAX_REVIEW_ROUNDS` | no | `5` | Review rounds per run before the app stops and lets you decide. |
 | `MOCK_ANTHROPIC` | no | | Set to `1` to answer every stage from fixtures. |

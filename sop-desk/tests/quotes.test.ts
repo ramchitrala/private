@@ -60,6 +60,18 @@ describe("requirements built from an extraction", () => {
     expect(v.dropped.map((d) => d.text)).toEqual(["500 words", "Quantum Ledger Design", "Network Defense"]);
     expect(v.details).toHaveLength(0);
   });
+  it("lists the same instruction once even when two pages give it", () => {
+    const flat = itemsFromExtract({
+      ...raw,
+      formatting: [
+        { aspect: "filetype", text: "We will only accept .doc and .pdf files.", normalized: "pdf", quote: "in 12 point font", sourceUrl: PAGE.url, level: "department" },
+        { aspect: "filetype", text: "We will only accept .doc and .pdf files.", normalized: "pdf", quote: "in 12 point font", sourceUrl: PAGE.url, level: "department" },
+      ],
+    });
+    const v = verifyAll(flat.items, flat.details, [PAGE]);
+    expect(v.items.filter((i) => i.kind === "fileType")).toHaveLength(1);
+  });
+
   it("lets program or department instructions win over general guidance of the same kind", () => {
     const flat = itemsFromExtract(raw);
     const v = verifyAll(flat.items, flat.details, [PAGE]);
