@@ -9,6 +9,12 @@
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
 
+/** The lower of two effort levels (a cap from the browser can only lower the configured level). */
+export function capEffort(effort: Effort, cap: unknown): Effort {
+  const c = EFFORTS.indexOf(cap as Effort);
+  return c === -1 ? effort : EFFORTS[Math.min(EFFORTS.indexOf(effort), c)];
+}
+
 function effort(name: string, fallback: Effort): Effort {
   const v = (process.env[name] ?? "").trim().toLowerCase() as Effort;
   return EFFORTS.includes(v) ? v : fallback;
@@ -31,6 +37,11 @@ export function getConfig() {
       research: effort("EFFORT_RESEARCH", "high"),
     },
     maxReviewRounds: int("MAX_REVIEW_ROUNDS", 5, 1, 12),
+    /**
+     * How long one step may run, in ms (the route's maxDuration). On Vercel it defaults to 300 s, the
+     * Hobby limit; set STAGE_TIME_LIMIT_S=800 on Pro. A step stops cleanly 20 s before the limit.
+     */
+    timeLimitMs: int("STAGE_TIME_LIMIT_S", process.env.VERCEL ? 300 : 0, 0, 800) * 1000,
     /** Rounds allowed after each "Ask for a change" request. */
     maxEditReviewRounds: 3,
     maxTokens: 64000,
@@ -43,9 +54,10 @@ export function getConfig() {
       // in full in the response and its text can be checked against quotes.
       webSearch: "web_search_20250305" as const,
       webFetch: "web_fetch_20250910" as const,
-      searchMaxUses: 8,
-      fetchMaxUses: 10,
-      fetchMaxContentTokens: 30000,
+      // Every page read is sent back on each later search round, so keep pages short and rounds few.
+      searchMaxUses: 6,
+      fetchMaxUses: 6,
+      fetchMaxContentTokens: 12000,
     },
   };
 }

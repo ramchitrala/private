@@ -125,6 +125,8 @@ export function errorFor(code: string, stage = ""): PlainError {
     case "model_context_window_exceeded":
     case "bad_json":
       return { heading: "This step didn't finish", body: "Your finished work is saved. Retry this step to pick up where it stopped.", kind: "general" };
+    case "too_slow":
+      return { heading: "This step took longer than the server allows", body: "Your finished work is saved. Retry this step; it will use a quicker setting.", kind: "general" };
     case "network":
       return { heading: "We couldn't reach SOP Desk", body: "Check your internet connection, then retry. Your finished work is saved.", kind: "general" };
     case "empty_resume":

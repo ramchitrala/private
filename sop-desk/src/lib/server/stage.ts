@@ -4,9 +4,12 @@ import { ResearchError } from "../requirements";
 
 export class StageError extends Error {
   code: string;
-  constructor(code: string, message: string) {
+  /** The effort the step ran at, reported with "too_slow" so the browser can retry lower. */
+  effort?: string;
+  constructor(code: string, message: string, effort?: string) {
     super(message);
     this.code = code;
+    this.effort = effort;
   }
 }
 
@@ -16,6 +19,10 @@ export interface StageCtx {
   signal: AbortSignal;
   emit: (event: StreamEvent) => void;
   usage: Usage;
+  /** When the request started, for the time limit. */
+  startedAt: number;
+  /** The browser may ask for a lower effort after a step ran out of time. */
+  effortCap?: string;
 }
 
 function emptyUsage(): Usage {
@@ -70,7 +77,15 @@ export function stageRoute<B>(stageName: string | ((body: B) => string), handler
             open = false;
           }
         };
-        const ctx: StageCtx = { stage, projectId, signal: req.signal, emit, usage: emptyUsage() };
+        const ctx: StageCtx = {
+          stage,
+          projectId,
+          signal: req.signal,
+          emit,
+          usage: emptyUsage(),
+          startedAt: started,
+          effortCap: (body as { effortCap?: string } | null)?.effortCap,
+        };
         // Keep the connection alive while the model thinks.
         const beat = setInterval(() => emit({ type: "progress", chars: -1 }), 10000);
         try {
@@ -83,7 +98,7 @@ export function stageRoute<B>(stageName: string | ((body: B) => string), handler
           const aborted = req.signal.aborted;
           const code = aborted ? "stopped" : err instanceof StageError || err instanceof ResearchError ? err.code : "error";
           const message = aborted ? "Stopped." : err instanceof Error ? err.message : "Something went wrong.";
-          emit({ type: "error", stage, code, message });
+          emit({ type: "error", stage, code, message, ...(err instanceof StageError && err.effort ? { effort: err.effort } : {}) });
           logLine(ctx, code);
         } finally {
           clearInterval(beat);

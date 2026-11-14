@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { getConfig, type Effort } from "./config";
+import { capEffort, getConfig, type Effort } from "./config";
 import { StageError, type StageCtx } from "./stage";
 
 export interface CallParams {
@@ -40,11 +40,20 @@ export async function callClaude(ctx: StageCtx, params: CallParams): Promise<Cal
 
   const messages = [...params.messages];
   const fetchUrls = new Map<string, string>();
+  const effort = capEffort(params.effort, ctx.effortCap);
+  // Stop cleanly before the platform's time limit, so the browser can retry the step at a lower effort.
+  const deadline = config.timeLimitMs ? ctx.startedAt + config.timeLimitMs - 20_000 : 0;
+  const tooSlow = () =>
+    new StageError("too_slow", "This step needed more time than the server allows, so it will be tried again a little faster.", effort);
   const content: Anthropic.ContentBlock[] = [];
   const assistantTurns: Anthropic.MessageParam[] = [];
   let text = "";
 
   for (let attempt = 0; ; attempt++) {
+    const remaining = deadline ? deadline - Date.now() : 0;
+    if (deadline && remaining < 5_000) throw tooSlow();
+    const timeUp = new AbortController();
+    const timer = deadline ? setTimeout(() => timeUp.abort(), remaining) : null;
     const stream = client.messages.stream(
       {
         model: config.model,
@@ -55,13 +64,13 @@ export async function callClaude(ctx: StageCtx, params: CallParams): Promise<Cal
         // which the applicant sees as the live reasoning feed.
         thinking: { type: "adaptive", display: "summarized" },
         output_config: {
-          effort: params.effort,
+          effort,
           ...(params.schema ? { format: { type: "json_schema" as const, schema: params.schema } } : {}),
         },
         ...(params.tools ? { tools: params.tools } : {}),
         ...(params.cacheConversation ? { cache_control: { type: "ephemeral" as const } } : {}),
       },
-      { signal: ctx.signal },
+      { signal: AbortSignal.any([ctx.signal, timeUp.signal]) },
     );
     let chars = 0;
     stream.on("text", (delta) => {
@@ -83,7 +92,10 @@ export async function callClaude(ctx: StageCtx, params: CallParams): Promise<Cal
     try {
       message = await stream.finalMessage();
     } catch (err) {
+      if (timeUp.signal.aborted && !ctx.signal.aborted) throw tooSlow();
       throw mapApiError(err);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
 
     const u = message.usage;

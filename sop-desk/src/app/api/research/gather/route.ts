@@ -37,6 +37,8 @@ async function gather(body: GatherBody, ctx: StageCtx): Promise<{ gather: Gather
     // The links are in the user message so that web fetch is allowed to fetch them.
     messages: [{ role: "user", content: gatherUser(check.url, extra.urls, body.entryTerm ?? "", body.concentration ?? "") }],
     tools,
+    // The search loop re-reads everything so far on each round; caching makes those re-reads cheap.
+    cacheConversation: true,
   });
   return { gather: await readToolBlocks(res.content, check.url, domains), domains };
 }

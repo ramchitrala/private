@@ -357,7 +357,8 @@ export type StreamEvent =
   /** Something Claude did with a tool: a search, a page it opened. */
   | { type: "activity"; text: string }
   | { type: "result"; data: unknown; usage: Usage }
-  | { type: "error"; stage: string; code: string; message: string };
+  /** `effort` is the effort the failed step used, so a step that ran out of time can be retried lower. */
+  | { type: "error"; stage: string; code: string; message: string; effort?: string };
 
 export interface WriterOutput {
   sections: DocSection[];

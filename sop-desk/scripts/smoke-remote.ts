@@ -11,7 +11,7 @@ import path from "node:path";
 import type { Project } from "../src/lib/types";
 import { emptyProject } from "../src/lib/client/store";
 import { formatFor, runDraft, runFacts, runQuestions, runResearch, type Runtime } from "../src/lib/client/pipeline";
-import { callStage, StageFailure } from "../src/lib/client/api";
+import { callStageAdaptive, StageFailure } from "../src/lib/client/api";
 import { buildFiles } from "../src/lib/client/files";
 import { bodyWords, docToText } from "../src/lib/docmodel";
 import { fileBaseName, sectionLimits } from "../src/lib/requirements";
@@ -24,6 +24,8 @@ const PROGRAMS: Record<string, string> = {
   b: process.env.SMOKE_URL_B ?? "https://www.newhaven.edu/engineering/graduate-programs/cybersecurity/",
   c: process.env.SMOKE_URL_C ?? "https://professionalprograms.umbc.edu/data-science/",
 };
+
+const caps = new Map<string, string>();
 
 function runtime(project: Project, log: (s: string) => void): Runtime {
   let current = project;
@@ -39,7 +41,9 @@ function runtime(project: Project, log: (s: string) => void): Runtime {
     call: async <T,>(pathname: string, body: unknown) => {
       const started = Date.now();
       let thoughts = 0;
-      const { data, usage } = await callStage<T>(`${BASE}${pathname}`, body, {
+      const { data, usage } = await callStageAdaptive<T>(`${BASE}${pathname}`, body, {
+        caps,
+        onSlower: (step, effort) => log(`    ! ${step} ran out of server time; retrying at ${effort} effort`),
         passcode: process.env.SOP_DESK_PASSCODE ?? "via-proxy",
         projectId: current.id,
         onActivity: (t) => log(`    > ${t}`),

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Profile, Project } from "@/lib/types";
 import type { AppInfo } from "@/lib/api-types";
-import { callStage, StageFailure } from "@/lib/client/api";
+import { callStageAdaptive, StageFailure } from "@/lib/client/api";
 import { buildFiles, type BuiltFiles } from "@/lib/client/files";
 import {
   applyProfile,
@@ -342,6 +342,16 @@ export default function App() {
 
   const feedId = useRef(0);
 
+  /** Effort levels lowered after a step ran out of server time, kept in this browser. */
+  const effortCaps = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    try {
+      effortCaps.current = new Map(Object.entries(JSON.parse(getPref("effortCaps") || "{}") as Record<string, string>));
+    } catch {
+      effortCaps.current = new Map();
+    }
+  }, []);
+
   const start = useCallback(
     function start(
       label: string,
@@ -394,7 +404,13 @@ export default function App() {
         call: async <T,>(path: string, body: unknown, stageLabel: string) => {
           const key = stepForPath(path);
           if (key) setRun((r) => (r ? { ...r, progress: startStep(r.progress, key) } : r));
-          const { data, usage } = await callStage<T>(path, body, {
+          const { data, usage } = await callStageAdaptive<T>(path, body, {
+            caps: effortCaps.current,
+            onSlower: () => {
+              setPref("effortCaps", JSON.stringify(Object.fromEntries(effortCaps.current)));
+              note("That step needed more time than the server allows, so SOP Desk is doing it again a little faster.");
+              if (key) setRun((r) => (r ? { ...r, progress: startStep(r.progress, key) } : r));
+            },
             passcode,
             projectId: statementRef.current?.id ?? "profile",
             signal: ac.signal,
