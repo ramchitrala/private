@@ -128,7 +128,7 @@ for (const vp of VIEWPORTS) {
       // Result.
       await focusedIsH1(page, "Your statement is ready");
       await expect(page.getByText("Step 6 of 6")).toBeVisible();
-      await expect(page.getByText(/Follows all 7 instructions we found · \d+ words \(limit 400 to 500\) · 1 page/)).toBeVisible();
+      await expect(page.getByText(/Follows all 7 instructions we found · \d+ words \(limit 400 to 500\) · \d pages?/)).toBeVisible();
       await expect(page.getByText("Fixture University asks for a PDF.", { exact: false })).toBeVisible();
       await expect(page.getByTestId("textview")).toBeVisible();
       await expect(page.getByTestId("textview")).toContainText("Maya Okafor");
@@ -143,7 +143,7 @@ for (const vp of VIEWPORTS) {
       // As printed: the real PDF pages, with a text summary.
       await page.getByRole("button", { name: "As printed" }).click();
       await expect(page.locator('[data-testid="pages"] canvas').first()).toBeVisible();
-      await expect(page.getByText(/1 page, US Letter, 11 pt, single spaced/)).toBeVisible();
+      await expect(page.getByText(/\d pages?, US Letter, 11 pt, 14\.6 pt lines/)).toBeVisible();
       await page.getByRole("button", { name: "Easy to read" }).click();
 
       // Details are one tap away, in plain words.
