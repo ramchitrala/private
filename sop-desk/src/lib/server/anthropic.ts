@@ -39,6 +39,7 @@ export async function callClaude(ctx: StageCtx, params: CallParams): Promise<Cal
   });
 
   const messages = [...params.messages];
+  const fetchUrls = new Map<string, string>();
   const content: Anthropic.ContentBlock[] = [];
   const assistantTurns: Anthropic.MessageParam[] = [];
   let text = "";
@@ -50,6 +51,9 @@ export async function callClaude(ctx: StageCtx, params: CallParams): Promise<Cal
         max_tokens: config.maxTokens,
         system: params.system,
         messages,
+        // Adaptive thinking is always on for this model; "summarized" streams a readable account of it,
+        // which the applicant sees as the live reasoning feed.
+        thinking: { type: "adaptive", display: "summarized" },
         output_config: {
           effort: params.effort,
           ...(params.schema ? { format: { type: "json_schema" as const, schema: params.schema } } : {}),
@@ -63,6 +67,16 @@ export async function callClaude(ctx: StageCtx, params: CallParams): Promise<Cal
     stream.on("text", (delta) => {
       chars += delta.length;
       ctx.emit({ type: "progress", chars });
+    });
+    stream.on("streamEvent", (event) => {
+      if (event.type === "content_block_start" && event.content_block.type === "thinking") ctx.emit({ type: "thought", text: "", start: true });
+    });
+    stream.on("thinking", (delta) => {
+      if (delta) ctx.emit({ type: "thought", text: delta });
+    });
+    stream.on("contentBlock", (block) => {
+      const activity = describeToolBlock(block, fetchUrls);
+      if (activity) ctx.emit({ type: "activity", text: activity });
     });
 
     let message: Anthropic.Message;
@@ -109,6 +123,32 @@ export async function callClaude(ctx: StageCtx, params: CallParams): Promise<Cal
         return { content, assistantTurns, text };
     }
   }
+}
+
+/** A plain sentence about a search or a page fetch, for the reasoning feed. */
+function describeToolBlock(block: Anthropic.ContentBlock, fetchUrls: Map<string, string>): string {
+  const site = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  if (block.type === "server_tool_use") {
+    const input = (block.input ?? {}) as { query?: string; url?: string };
+    if (block.name === "web_search" && input.query) return `Searching the university's site for: ${input.query}`;
+    if (block.name === "web_fetch" && input.url) {
+      fetchUrls.set(block.id, input.url);
+      return `Opening ${site(input.url)}`;
+    }
+    return "";
+  }
+  if (block.type === "web_search_tool_result") {
+    if (!Array.isArray(block.content)) return "A search didn't work; trying another way.";
+    const n = block.content.length;
+    return n ? `Found ${n} page${n === 1 ? "" : "s"} to look at.` : "That search found nothing.";
+  }
+  if (block.type === "web_fetch_tool_result") {
+    const url = fetchUrls.get(block.tool_use_id) ?? "";
+    if (block.content.type !== "web_fetch_result") return `Couldn't open ${site(url) || "a page"}.`;
+    const title = block.content.content.title;
+    return `Read ${title ? `"${title}"` : site(block.content.url || url)}.`;
+  }
+  return "";
 }
 
 function mapApiError(err: unknown): Error {

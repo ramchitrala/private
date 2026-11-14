@@ -97,10 +97,12 @@ describe("access protection", () => {
 describe("request rules for Claude Opus 5.5", () => {
   const server = ["anthropic.ts", "config.ts"].map((f) => fs.readFileSync(path.join(ROOT, "src", "lib", "server", f), "utf8")).join("\n");
   const code = server.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
-  it("sets effort, streams, and never sends sampling parameters, thinking config, forced tool choice or prefill", () => {
+  it("sets effort, streams, and never sends sampling parameters, a thinking budget, forced tool choice or prefill", () => {
     expect(code).toContain("output_config");
     expect(code).toContain("client.messages.stream(");
-    expect(code).not.toMatch(/temperature|top_p|top_k|budget_tokens|tool_choice|thinking\s*:/);
+    expect(code).not.toMatch(/temperature|top_p|top_k|budget_tokens|tool_choice|"disabled"|"enabled"/);
+    // Thinking stays adaptive; only its display is set, so the reasoning can be shown live.
+    expect(code).toContain('thinking: { type: "adaptive", display: "summarized" }');
     expect(code).not.toMatch(/content\[0\]/);
     expect(code).toContain('"claude-opus-5-5"');
     expect(code).toMatch(/write: effort\("EFFORT_WRITE", "xhigh"\)/);

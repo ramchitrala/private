@@ -17,6 +17,8 @@ export interface CallOptions {
   onStatus?: (message: string) => void;
   onBusy?: () => void;
   onProgress?: (chars: number) => void;
+  onThought?: (text: string, start: boolean) => void;
+  onActivity?: (text: string) => void;
 }
 
 /** POST to a stage route and read its NDJSON stream until the result or an error arrives. */
@@ -51,6 +53,8 @@ export async function callStage<T>(path: string, body: unknown, opts: CallOption
     if (event.type === "status") opts.onStatus?.(event.message);
     else if (event.type === "busy") opts.onBusy?.();
     else if (event.type === "progress") opts.onProgress?.(event.chars);
+    else if (event.type === "thought") opts.onThought?.(event.text, !!event.start);
+    else if (event.type === "activity") opts.onActivity?.(event.text);
     else if (event.type === "error") throw new StageFailure(event.stage, event.code, event.message);
     else if (event.type === "result") result = { data: event.data as T, usage: event.usage };
   };

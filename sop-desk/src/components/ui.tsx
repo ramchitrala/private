@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type TextareaHTMLAttributes } from "react";
-import { BUSY_LINE, elapsed, errorFor } from "@/lib/client/labels";
-import { useDesk, type RunKind } from "./ctx";
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type TextareaHTMLAttributes } from "react";
+import { BUSY_LINE, errorFor } from "@/lib/client/labels";
+import { useDesk, type FeedItem, type RunKind } from "./ctx";
 
 /** Step line, Back, and the screen's h1, which takes focus and names the tab. */
 export function ScreenHead({
@@ -49,22 +49,9 @@ export function ScreenHead({
   );
 }
 
-function Clock({ since }: { since: number }) {
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(t);
-  }, []);
-  return (
-    <span className="num muted" aria-hidden="true">
-      Time so far {elapsed(Date.now() - since)}
-    </span>
-  );
-}
-
-/** The panel that replaces a pressed button while its run goes on: stage, time and Stop. */
+/** The panel that replaces a pressed button while its run goes on: progress, the live feed and Stop. */
 export function ProgressPanel({ kinds }: { kinds: RunKind[] }) {
-  const { run, stop } = useDesk();
+  const { run } = useDesk();
   const ref = useRef<HTMLParagraphElement>(null);
   const active = !!run && kinds.includes(run.kind);
   useEffect(() => {
@@ -72,24 +59,111 @@ export function ProgressPanel({ kinds }: { kinds: RunKind[] }) {
   }, [active]);
   if (!run || !active) return null;
   return (
-    <div className="progress sticky">
-      <p className="stage" tabIndex={-1} ref={ref}>
-        {run.busy ? BUSY_LINE : run.stage.label}
+    <div className="progress">
+      <p className="sr-only" tabIndex={-1} ref={ref}>
+        {run.stage.label}
       </p>
-      {run.stage.detail && !run.busy && <p className="hint">{run.stage.detail}</p>}
-      <div className="row between">
-        <Clock since={run.startedAt} />
-        <button type="button" className="btn" onClick={stop}>
-          Stop
-        </button>
-      </div>
+      <RunView />
     </div>
   );
 }
 
-export function RunClock() {
-  const { run } = useDesk();
-  return run ? <Clock since={run.startedAt} /> : null;
+/** The share of the work really done, as a bar and a number. */
+export function ProgressBar({ value, label = "Progress" }: { value: number; label?: string }) {
+  return (
+    <div className="bar-wrap">
+      <div className="bar" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={value} aria-valuetext={`${value}% done`}>
+        <div className="bar-fill" style={{ width: `${value}%` }} />
+      </div>
+      <span className="num bar-num" aria-hidden="true">
+        {value}%
+      </span>
+    </div>
+  );
+}
+
+/** Split "**Title**\n\nBody" into its parts. */
+function thoughtParts(text: string): { title: string; body: string } {
+  const m = text.match(/^\s*\*\*(.+?)\*\*\s*([\s\S]*)$/);
+  if (m) return { title: m[1].trim(), body: m[2].replace(/\*\*/g, "").trim() };
+  return { title: "", body: text.replace(/\*\*/g, "").trim() };
+}
+
+/**
+ * What SOP Desk is thinking and doing, live: Claude's own summary of its reasoning, the searches
+ * it runs and the pages it opens. It follows the newest line unless you scroll up to read.
+ */
+export function Feed({ items }: { items: FeedItem[] }) {
+  const box = useRef<HTMLDivElement>(null);
+  const follow = useRef(true);
+  const visible = items.filter((i) => i.text.trim());
+  const last = visible[visible.length - 1];
+  useEffect(() => {
+    const el = box.current;
+    if (el && follow.current) el.scrollTop = el.scrollHeight;
+  }, [visible.length, last?.text]);
+  return (
+    <div
+      className="feed"
+      ref={box}
+      tabIndex={0}
+      role="region"
+      aria-label="What SOP Desk is doing"
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      }}
+    >
+      {visible.length === 0 ? (
+        <p className="feed-empty">Getting started…</p>
+      ) : (
+        <ol>
+          {visible.map((item) => {
+            if (item.kind !== "thought") {
+              return (
+                <li key={item.id} className={`feed-${item.kind}`}>
+                  {item.text}
+                </li>
+              );
+            }
+            const { title, body } = thoughtParts(item.text);
+            return (
+              <li key={item.id} className="feed-thought">
+                {title && <strong>{title}</strong>}
+                {body && <span>{body}</span>}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+/** Progress, the live feed and Stop, for the run that is going on. */
+export function RunView({ showStage = true }: { showStage?: boolean }) {
+  const { run, stop } = useDesk();
+  if (!run) return null;
+  const value = Math.round(run.progress.shown * 100);
+  return (
+    <>
+      {showStage && (
+        <p className="stage">
+          {run.paused ? "Paused while you were away" : run.busy ? BUSY_LINE : run.stage.label}
+          {!run.paused && !run.busy && run.stage.detail && <span className="sub">{run.stage.detail}</span>}
+        </p>
+      )}
+      <ProgressBar value={value} />
+      {run.paused && <p className="hint">You left the page, so the connection paused. It carries on by itself when you come back; nothing finished is lost.</p>}
+      <Feed items={run.feed} />
+      <div className="row between run-foot">
+        <p className="hint">You can switch to another app. It picks up where it left off.</p>
+        <button type="button" className="btn" onClick={stop}>
+          Stop
+        </button>
+      </div>
+    </>
+  );
 }
 
 /** One error block, in place, focused on arrival, with one way forward. */

@@ -1074,3 +1074,92 @@ fieldset .hint {
 .download .row .btn.text {
   margin-left: 0;
 }
+
+/* ---------- progress and the live feed ---------- */
+
+.progress > .stage {
+  margin-bottom: var(--s2);
+}
+.progress .stage .sub {
+  display: block;
+  font-weight: 400;
+  font-size: var(--text-hint);
+  color: var(--muted);
+}
+.bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin: var(--s2) 0 var(--s3);
+}
+.bar {
+  flex: 1;
+  height: 10px;
+  background: var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  background: var(--ink);
+  border-radius: var(--radius);
+  transition: width 400ms ease;
+}
+.bar-num {
+  min-width: 3.2em;
+  text-align: right;
+  font-size: var(--text-hint);
+  color: var(--muted);
+}
+.feed {
+  max-height: 20rem;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: var(--s3) var(--s4);
+  font-size: var(--text-hint);
+  line-height: 1.5;
+  overscroll-behavior: contain;
+}
+.feed ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.feed li + li {
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--rule);
+}
+.feed-thought strong {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.feed-thought span {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.feed-activity {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.feed-activity::before {
+  content: "\2192  ";
+  content: "\2192  " / "";
+}
+.feed-note {
+  color: var(--warn);
+}
+.feed-empty {
+  color: var(--muted);
+}
+.run-foot {
+  margin-top: var(--s3);
+  flex-wrap: nowrap;
+  align-items: center;
+}
+.run-foot .hint {
+  flex: 1;
+}

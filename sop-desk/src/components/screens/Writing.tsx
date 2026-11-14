@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { BUSY_LINE, WRITING_STAGES } from "@/lib/client/labels";
-import { ErrorBlock, RunClock, ScreenHead } from "../ui";
+import { WRITING_STAGES } from "@/lib/client/labels";
+import { ErrorBlock, RunView, ScreenHead } from "../ui";
 import { useDesk } from "../ctx";
 import { stepFor } from "./steps";
 import { continueWriting } from "./write";
@@ -56,32 +56,21 @@ export function WritingScreen() {
       <ScreenHead title="Writing your statement" step={step} />
       <ol className="stages">
         {WRITING_STAGES.map((s, i) => {
-          const state = i < reached || (i === reached && i !== current) ? "Done" : i === current ? "Working on it" : "Next";
+          const state = i < reached || (i === reached && i !== current) ? "Done" : i === current ? (run.paused ? "Paused" : "Working on it") : "Next";
           return (
             <li key={s.key} aria-current={i === current ? "step" : undefined}>
               <span>
                 {i + 1}. {s.label}
-                {i === current && run.stage.detail && <span className="sub">{run.stage.detail}</span>}
+                {i === current && run.stage.detail && !run.paused && <span className="sub">{run.stage.detail}</span>}
               </span>
               <span className="state">{state}</span>
             </li>
           );
         })}
       </ol>
-      {run.busy && <p>{BUSY_LINE}</p>}
-      <div className="progress sticky">
-        <p className="stage">{current >= 0 ? WRITING_STAGES[current].label : "Getting started"}</p>
-        <div className="row between">
-          <RunClock />
-          <button type="button" className="btn" onClick={stop} aria-describedby="stop-hint">
-            Stop
-          </button>
-        </div>
-        <p className="hint" id="stop-hint">
-          Finished work is kept.
-        </p>
+      <div className="progress">
+        <RunView showStage={false} />
       </div>
-      <p className="hint section">This usually takes 3 to 6 minutes. You can keep this tab open and do something else; your work is saved as it goes.</p>
     </>
   );
 }

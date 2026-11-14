@@ -26,8 +26,9 @@ import {
   whenBlocked,
 } from "@/lib/client/store";
 import { formatFor, type Runtime } from "@/lib/client/pipeline";
+import { endStep, newProgress, startStep, stepForPath, writing, type Progress } from "@/lib/client/progress";
 import { BUSY_LINE, stageFor, type Stage } from "@/lib/client/labels";
-import { DeskContext, type Desk, type ErrorState, type RunState, type Screen, type StartOptions, type StoppedState } from "./ctx";
+import { DeskContext, type Desk, type ErrorState, type FeedItem, type RunState, type Screen, type StartOptions, type StoppedState } from "./ctx";
 import { Gate } from "./screens/Gate";
 import { Home } from "./screens/Home";
 import { ResumeScreen } from "./screens/Resume";
@@ -308,24 +309,80 @@ export default function App() {
 
   /* -------------------------------------------------------------- runs */
 
+  /** Keeps the screen awake while a run goes on, where the browser allows it. */
+  const wakeLock = useRef<{ release: () => Promise<void> } | null>(null);
+  const holdScreen = useCallback(async (on: boolean) => {
+    try {
+      if (on && !wakeLock.current && document.visibilityState === "visible") {
+        const nav = navigator as Navigator & { wakeLock?: { request: (t: "screen") => Promise<{ release: () => Promise<void> }> } };
+        wakeLock.current = (await nav.wakeLock?.request("screen")) ?? null;
+      } else if (!on && wakeLock.current) {
+        await wakeLock.current.release();
+        wakeLock.current = null;
+      }
+    } catch {
+      wakeLock.current = null;
+    }
+  }, []);
+
+  /** Whether the page was hidden (another app, another tab) since the current run started. */
+  const hiddenDuringRun = useRef(false);
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") hiddenDuringRun.current = true;
+      else {
+        // The wake lock ends when the page is hidden; take it again on return.
+        wakeLock.current = null;
+        if (abortRef.current) void holdScreen(true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [holdScreen]);
+
+  const feedId = useRef(0);
+
   const start = useCallback(
-    (label: string, fn: (rt: Runtime) => Promise<void>, opts: StartOptions) => {
+    function start(
+      label: string,
+      fn: (rt: Runtime) => Promise<void>,
+      opts: StartOptions,
+      carry?: { feed: FeedItem[]; progress: Progress; attempts: number; startedAt: number },
+    ) {
       if (abortRef.current || !info) return;
       const ac = new AbortController();
       abortRef.current = ac;
+      hiddenDuringRun.current = document.visibilityState === "hidden";
+      void holdScreen(true);
       setError(null);
       setStopped(null);
       const first: Stage = { key: "working", label: "Working on it", detail: "" };
-      setRun({ kind: opts.kind, stage: first, seen: [], startedAt: Date.now(), busy: false });
+      const wordTarget = statementRef.current ? formatFor(statementRef.current).wordMax || 1100 : 1100;
+      setRun((prev) => ({
+        kind: opts.kind,
+        stage: carry && prev ? prev.stage : first,
+        seen: carry && prev ? prev.seen : [],
+        startedAt: carry?.startedAt ?? Date.now(),
+        busy: false,
+        paused: false,
+        feed: carry ? carry.feed : [],
+        progress: carry ? carry.progress : newProgress(opts.plan ?? opts.kind, opts.kind === "change" ? info.maxEditReviewRounds : info.maxReviewRounds, wordTarget),
+      }));
+
+      const note = (text: string, kind: FeedItem["kind"] = "note") =>
+        setRun((r) => (r ? { ...r, feed: [...r.feed, { id: ++feedId.current, kind, text }].slice(-80) } : r));
 
       const onStatus = (message: string) => {
-        const s = stageFor(message);
+        let s = stageFor(message);
         if (!s) return;
+        // While writing, a passage fixed during the checks is part of checking, not a separate change.
+        if (opts.kind === "write" && (s.key === "change" || s.key === "smooth")) s = { key: "check", label: "Checking it against the instructions", detail: "" };
         setRun((r) => {
           if (!r) return r;
           const detail = s.detail || (s.key === r.stage.key ? r.stage.detail : "");
           if (s.key !== r.stage.key) announce(s.label);
-          return { ...r, busy: false, stage: { ...s, detail }, seen: r.seen.includes(s.key) ? r.seen : [...r.seen, s.key] };
+          const progress = s.key === "files" ? startStep(r.progress, "files") : r.progress;
+          return { ...r, busy: false, progress, stage: { ...s, detail }, seen: r.seen.includes(s.key) ? r.seen : [...r.seen, s.key] };
         });
       };
 
@@ -335,6 +392,8 @@ export default function App() {
         info,
         status: onStatus,
         call: async <T,>(path: string, body: unknown, stageLabel: string) => {
+          const key = stepForPath(path);
+          if (key) setRun((r) => (r ? { ...r, progress: startStep(r.progress, key) } : r));
           const { data, usage } = await callStage<T>(path, body, {
             passcode,
             projectId: statementRef.current?.id ?? "profile",
@@ -345,11 +404,29 @@ export default function App() {
                 if (r && !r.busy) announce(BUSY_LINE);
                 return r ? { ...r, busy: true } : r;
               }),
-            onProgress: (chars) => chars > 0 && setRun((r) => (r && r.busy ? { ...r, busy: false } : r)),
+            onProgress: (chars) =>
+              chars > 0 && setRun((r) => (r ? { ...r, busy: false, progress: writing(r.progress, chars) } : r)),
+            onThought: (text, isStart) =>
+              setRun((r) => {
+                if (!r) return r;
+                const feed = [...r.feed];
+                const last = feed[feed.length - 1];
+                if (isStart || !last || last.kind !== "thought") {
+                  if (isStart && !text) {
+                    feed.push({ id: ++feedId.current, kind: "thought", text: "" });
+                    return { ...r, busy: false, feed: feed.slice(-80) };
+                  }
+                  feed.push({ id: ++feedId.current, kind: "thought", text });
+                } else feed[feed.length - 1] = { ...last, text: last.text + text };
+                return { ...r, busy: false, feed: feed.slice(-80) };
+              }),
+            onActivity: (text) => note(text, "activity"),
           });
           if (opts.target !== "profile" && statementRef.current) {
             update((p) => (p.runs = [...p.runs, { stage: stageLabel, at: new Date().toISOString(), ...usage }].slice(-80)));
           }
+          const askedForChanges = key === "review" && (data as { review?: { verdict?: string } })?.review?.verdict === "CORRECTIONS";
+          setRun((r) => (r ? { ...r, progress: endStep(r.progress, { reviewAskedForChanges: askedForChanges }) } : r));
           return data;
         },
       };
@@ -357,11 +434,15 @@ export default function App() {
 
       (async () => {
         let ok = false;
+        let paused = false;
         try {
           await fn(rt);
           ok = true;
         } catch (err) {
           const f = err instanceof StageFailure ? err : new StageFailure(label, "error", err instanceof Error ? err.message : "Something went wrong.");
+          const dropped = ["network", "stream", "timeout", "http"].includes(f.code) && !ac.signal.aborted;
+          const away = hiddenDuringRun.current || document.visibilityState === "hidden";
+          const attempts = carry?.attempts ?? 0;
           if (f.code === "passcode") {
             setPref("passcode", "");
             setPasscode("");
@@ -370,14 +451,54 @@ export default function App() {
           } else if (f.code === "stopped" || ac.signal.aborted) {
             setStopped({ kind: opts.kind, resume: () => start(label, fn, opts) });
             announce("Stopped. Everything finished so far is saved.");
+          } else if (dropped && (away ? attempts < 8 : f.code !== "timeout" && attempts < 2)) {
+            // The connection dropped, almost always because the phone or browser paused this page while
+            // another app was open. Nothing finished is lost: wait until the page is back, then carry on.
+            paused = true;
+            const waitAc = new AbortController();
+            abortRef.current = waitAc;
+            let carried: { feed: FeedItem[]; progress: Progress; startedAt: number } | null = null;
+            setRun((r) => {
+              if (!r) return r;
+              const text = away
+                ? "The connection paused while you were away. Picking up where it left off when you're back."
+                : "The connection dropped. Trying again.";
+              const feed = [...r.feed, { id: ++feedId.current, kind: "note" as const, text }].slice(-80);
+              carried = { feed, progress: r.progress, startedAt: r.startedAt };
+              return { ...r, paused: true, feed };
+            });
+            const resume = () => {
+              if (waitAc.signal.aborted) return;
+              document.removeEventListener("visibilitychange", onBack);
+              abortRef.current = null;
+              const c = carried ?? { feed: [], progress: newProgress(opts.kind, info.maxReviewRounds), startedAt: Date.now() };
+              c.feed = [...c.feed, { id: ++feedId.current, kind: "note", text: "Back again. Carrying on from the last finished step." }];
+              start(label, fn, opts, { ...c, attempts: attempts + 1 });
+            };
+            const onBack = () => {
+              if (document.visibilityState === "visible") setTimeout(resume, 600);
+            };
+            waitAc.signal.addEventListener("abort", () => {
+              document.removeEventListener("visibilitychange", onBack);
+              abortRef.current = null;
+              setRun(null);
+              void holdScreen(false);
+              setStopped({ kind: opts.kind, resume: () => start(label, fn, opts) });
+              announce("Stopped. Everything finished so far is saved.");
+            });
+            if (document.visibilityState === "visible") setTimeout(resume, away ? 600 : 2500);
+            else document.addEventListener("visibilitychange", onBack);
           } else {
             setError({ kind: opts.kind, stage: label, failStage: f.stage, code: f.code, message: f.message, retry: () => start(label, fn, opts) });
             if (opts.target !== "profile" && statementRef.current) update((p) => (p.lastError = { stage: f.stage || label, code: f.code }));
             opts.onError?.(f.code, f.stage);
           }
         } finally {
-          abortRef.current = null;
-          setRun(null);
+          if (!paused) {
+            if (abortRef.current === ac) abortRef.current = null;
+            setRun(null);
+            void holdScreen(false);
+          }
         }
         if (ok) {
           if (opts.target !== "profile" && statementRef.current?.lastError) update((p) => (p.lastError = null));
@@ -385,7 +506,7 @@ export default function App() {
         }
       })();
     },
-    [info, passcode, update, announce],
+    [info, passcode, update, announce, holdScreen],
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);

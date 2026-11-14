@@ -459,3 +459,71 @@ test("stopping a resume replacement keeps the details you had", async ({ page })
   await focusedIsH1(page, "My statements");
   await expect(page.getByText(/· 11 details ·/)).toBeVisible();
 });
+
+test("while writing: a live reasoning feed and a progress bar, no timers", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await unlock(page);
+  await onboard(page);
+  await page.getByLabel("Link to the program's page").fill(SCU);
+  await page.getByRole("button", { name: "Find the instructions" }).click();
+  // Research shows what it searched and opened.
+  await expect(page.getByRole("region", { name: "What SOP Desk is doing" })).toContainText("Searching the university's site for", { timeout: 20_000 });
+  await page.getByRole("button", { name: "Looks right, continue" }).click();
+  await page.getByRole("button", { name: "Write my statement" }).click();
+  const feed = page.getByRole("region", { name: "What SOP Desk is doing" });
+  await expect(feed).toContainText("Planning the answers");
+  const bar = page.getByRole("progressbar", { name: "Progress" });
+  await expect(bar).toBeVisible();
+  await expect(page.getByText(/Time so far/)).toHaveCount(0);
+  // The bar only moves forward.
+  const values: number[] = [];
+  for (let i = 0; i < 12; i++) {
+    const v = await bar.getAttribute("aria-valuenow").catch(() => null);
+    if (v === null) break;
+    values.push(Number(v));
+    await page.waitForTimeout(150);
+  }
+  expect([...values].sort((a, b) => a - b)).toEqual(values);
+  await shot(page, "1440-light-06b-writing-feed");
+  await focusedIsH1(page, "Your statement is ready");
+});
+
+test("switching to another app mid-run pauses, then carries on by itself", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await unlock(page);
+  await onboard(page);
+  await page.getByLabel("Link to the program's page").fill(SCU);
+  await page.getByRole("button", { name: "Find the instructions" }).click();
+  await page.getByRole("button", { name: "Looks right, continue" }).click();
+
+  // The phone suspends the page while another app is open: the page is hidden and the connection drops.
+  let dropped = false;
+  await page.route("**/api/humanize", async (route) => {
+    if (!dropped) {
+      dropped = true;
+      await page.evaluate(() => {
+        Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      return route.abort("failed");
+    }
+    return route.continue();
+  });
+  await page.getByRole("button", { name: "Write my statement" }).click();
+  await expect(page.getByText("You left the page, so the connection paused.", { exact: false })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "Retry this step" })).toHaveCount(0);
+  await shot(page, "390-light-06c-paused");
+
+  // Coming back: it carries on from the finished draft, with no button to press.
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await focusedIsH1(page, "Your statement is ready");
+  await toggle(page, "Earlier versions");
+  await expect(page.getByText(/Version 1 · first draft/)).toBeVisible();
+  await expect(page.getByText(/Version 2/)).toHaveCount(0);
+  await toggle(page, "Technical details");
+  // The draft was written once: only the interrupted step ran again.
+  await expect(page.locator("table.runs td", { hasText: /^Draft$/ })).toHaveCount(1);
+});

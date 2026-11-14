@@ -344,6 +344,10 @@ export type StreamEvent =
   | { type: "status"; message: string }
   | { type: "busy" }
   | { type: "progress"; chars: number }
+  /** Claude's summarized reasoning, streamed as it is written. `start` begins a new thought. */
+  | { type: "thought"; text: string; start?: boolean }
+  /** Something Claude did with a tool: a search, a page it opened. */
+  | { type: "activity"; text: string }
   | { type: "result"; data: unknown; usage: Usage }
   | { type: "error"; stage: string; code: string; message: string };
 

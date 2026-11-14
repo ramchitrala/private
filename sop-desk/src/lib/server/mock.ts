@@ -7,9 +7,50 @@ import { countWords } from "../docmodel";
 // and the tests run without API credits. The applicant ("Maya Okafor"), her employers
 // and the page texts are invented. They are fixtures, not statements about any real program.
 
+/** Sample reasoning for test mode, so the feed can be seen without the API. */
+const MOCK_THOUGHTS: Record<string, { thoughts: string[]; activities?: string[] }> = {
+  facts: { thoughts: ["**Reading the resume**\n\nI'm going through each section and copying dates, titles and numbers exactly as written."] },
+  "research-gather": {
+    activities: ["Opening the program page", "Searching the university's site for: statement of purpose requirements", "Found 4 pages to look at.", "Read \"Application requirements\"."],
+    thoughts: ["**Looking for the statement instructions**\n\nThe program page lists the degree but not the essay rules, so I'm checking the application pages on the same site."],
+  },
+  "research-extract": { thoughts: ["**Pulling out each instruction**\n\nI'm copying the questions and the word range word for word so each one can be checked against the page."] },
+  questions: { thoughts: ["**Checking for gaps**\n\nThe questions ask about goals and preparation; the resume covers the work, so I'll ask only about awards and plans."] },
+  draft: {
+    thoughts: [
+      "**Planning the answers**\n\nThree questions, 400 to 500 words in total, so roughly 150 words each. I'll lead the first answer with the transit data project.",
+      "**Writing**\n\nUsing only the resume details: the Harborline reports, the churn report going from three days to four hours, and the capstone prize.",
+    ],
+  },
+  humanize: { thoughts: ["**Making it sound natural**\n\nRemoving the dashes and the 'not just X but Y' line while keeping every number and date."] },
+  review: {
+    thoughts: [
+      "**Checking every claim**\n\nEach number matches the resume. One sentence says 'four analyst use', which needs fixing.",
+      "**Checking the instructions**\n\nAll three questions are answered in order and the length is inside 400 to 500 words.",
+    ],
+  },
+  "edit-chat": { thoughts: ["**Making the change**\n\nAdding the award to the closing paragraph with the smallest edit, leaving the rest as it is."] },
+  "edit-correction": { thoughts: ["**Fixing one passage**\n\nThe phrase appears twice, so I'm changing only the first mention."] },
+};
+
 export async function mockDelay(ctx: StageCtx, usage: Partial<Usage> = {}, ms = process.env.VITEST ? 0 : 350): Promise<void> {
   ctx.emit({ type: "status", message: "Mock mode: answering from fixtures" });
-  await new Promise((r) => setTimeout(r, ms));
+  const sample = MOCK_THOUGHTS[ctx.stage.replace(/#\d+$/, "")];
+  const pieces = sample ? [...(sample.activities ?? []).map((a) => ({ a })), ...sample.thoughts.map((t) => ({ t }))] : [];
+  const each = pieces.length ? ms / pieces.length : ms;
+  for (const piece of pieces) {
+    if ("a" in piece) ctx.emit({ type: "activity", text: piece.a });
+    else {
+      ctx.emit({ type: "thought", text: "", start: true });
+      // Stream the sample in small pieces, as the real feed arrives.
+      for (const chunk of piece.t.match(/[\s\S]{1,24}/g) ?? []) {
+        ctx.emit({ type: "thought", text: chunk });
+        if (!process.env.VITEST) await new Promise((r) => setTimeout(r, 12));
+      }
+    }
+    await new Promise((r) => setTimeout(r, each));
+  }
+  if (!pieces.length) await new Promise((r) => setTimeout(r, ms));
   Object.assign(ctx.usage, { inputTokens: 1200, outputTokens: 800, stopReason: "end_turn", ...usage });
 }
 

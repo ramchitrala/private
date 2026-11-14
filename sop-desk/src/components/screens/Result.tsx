@@ -206,7 +206,7 @@ export function ResultScreen() {
         rt.status("Preparing your files");
         await saveVersion(rt, `Check ${rt.get().versions.length + 1}`);
       },
-      { kind: "write", after: () => go("result", { replace: true }) },
+      { kind: "write", plan: "other", after: () => go("result", { replace: true }) },
     );
   };
 

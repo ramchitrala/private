@@ -6,10 +6,17 @@ import type { AppInfo } from "@/lib/api-types";
 import type { BuiltFiles } from "@/lib/client/files";
 import type { Runtime } from "@/lib/client/pipeline";
 import type { Stage, StageKey } from "@/lib/client/labels";
+import type { PlanKind, Progress } from "@/lib/client/progress";
 
 export type Screen = "home" | "resume" | "details" | "profile" | "program" | "instructions" | "questions" | "writing" | "result";
 
 export type RunKind = "resume" | "research" | "write" | "change" | "other";
+
+export interface FeedItem {
+  id: number;
+  kind: "thought" | "activity" | "note";
+  text: string;
+}
 
 export interface RunState {
   kind: RunKind;
@@ -18,6 +25,11 @@ export interface RunState {
   seen: StageKey[];
   startedAt: number;
   busy: boolean;
+  /** What SOP Desk is thinking and doing, newest last. */
+  feed: FeedItem[];
+  progress: Progress;
+  /** The connection dropped (usually because the applicant switched apps); it resumes on return. */
+  paused: boolean;
 }
 
 export interface ErrorState {
@@ -33,6 +45,8 @@ export interface ErrorState {
 
 export interface StartOptions {
   kind: RunKind;
+  /** Which steps the progress bar expects; defaults to the kind's usual steps. */
+  plan?: PlanKind;
   /** The run is about the profile (reading a resume): nothing is recorded on a statement. */
   target?: "statement" | "profile";
   /** Replace the runtime the run sees, e.g. to read a resume into a draft profile. */
